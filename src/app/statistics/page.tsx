@@ -1,12 +1,5 @@
-import { BarChart3 } from "lucide-react";
-import { ComingSoon } from "@/components/ui/coming-soon";
+import { StatisticsPage } from "@/features/statistics/statistics-page";
 
-export default function StatisticsPage() {
-  return (
-    <ComingSoon
-      Icon={BarChart3}
-      title="Статистика"
-      description="Графики накоплений и прогнозы появятся на следующем этапе."
-    />
-  );
+export default function Page() {
+  return <StatisticsPage />;
 }
