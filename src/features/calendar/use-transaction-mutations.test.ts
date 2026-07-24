@@ -13,7 +13,7 @@ vi.mock("./api", () => ({
 }));
 
 import { useTransactionMutations } from "./use-transaction-mutations";
-import { subscribeQueryKey } from "./query-cache";
+import { subscribeQueryKey } from "@/lib/query/query-cache";
 import { CurrencyType, IncomeSource, TransactionType } from "@/lib/calendar-math";
 
 const INPUT = {

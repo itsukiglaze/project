@@ -15,7 +15,7 @@ vi.mock("./api", () => ({
 }));
 
 import { useSeriesMutations } from "./use-series-mutations";
-import { subscribeQueryKey } from "./query-cache";
+import { subscribeQueryKey } from "@/lib/query/query-cache";
 import { CurrencyType, IncomeSource, RecurrenceEndType, RecurrenceFrequency, TransactionType } from "@/lib/calendar-math";
 
 const TEMPLATE = {

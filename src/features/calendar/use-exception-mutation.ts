@@ -5,7 +5,8 @@ import type { LocalDate } from "@/lib/calendar-math";
 import { upsertException, type ExceptionInputDto, type ExceptionMutationResult } from "./api";
 import { mapMutationError, type MutationState } from "./mutation-state";
 import { useIdempotencyKey } from "./use-idempotency-key";
-import { CALENDAR_QUERY_KEYS, invalidateQueryKeys } from "./query-cache";
+import { invalidateQueryKeys } from "@/lib/query/query-cache";
+import { CALENDAR_QUERY_KEYS } from "./query-cache";
 
 export function useExceptionMutation() {
   const [state, setState] = useState<MutationState>({ status: "idle" });

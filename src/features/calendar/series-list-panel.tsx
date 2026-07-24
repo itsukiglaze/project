@@ -2,7 +2,7 @@
 
 import { RECURRENCE_FREQUENCY_LABELS, TRANSACTION_TYPE_LABELS } from "./labels";
 import type { SeriesRecordDto } from "./api";
-import type { QueryState } from "./use-calendar-query";
+import type { QueryState } from "@/lib/query/use-query";
 
 export function SeriesListPanel({
   query,

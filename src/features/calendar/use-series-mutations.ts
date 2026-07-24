@@ -14,7 +14,8 @@ import {
 } from "./api";
 import { mapMutationError, type MutationState } from "./mutation-state";
 import { useIdempotencyKey } from "./use-idempotency-key";
-import { CALENDAR_QUERY_KEYS, invalidateQueryKeys } from "./query-cache";
+import { invalidateQueryKeys } from "@/lib/query/query-cache";
+import { CALENDAR_QUERY_KEYS } from "./query-cache";
 
 function invalidateAfterSeriesChange(): void {
   invalidateQueryKeys(CALENDAR_QUERY_KEYS.seriesList);
