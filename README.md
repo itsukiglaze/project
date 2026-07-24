@@ -3,9 +3,11 @@
 Telegram Mini App для игроков Zenless Zone Zero: калькулятор круток, календарь
 доходов, статистика накоплений и цели с прогнозом.
 
-**Статус:** Stage 2 (каркас: авторизация через Telegram, безопасные сессии,
-базовый layout и нижняя навигация). Калькулятор, календарь и статистика —
-заглушки, будут реализованы на следующих этапах.
+**Статус:** Stage 5D завершён и проверен (авторизация, калькулятор,
+календарь с повторяющимися сериями/исключениями/split-флоу). Статистика
+(`src/app/statistics/page.tsx`) — всё ещё заглушка, Stage 6. Подробная
+история этапов и известные ограничения — в `DEVELOPMENT_STATUS.md`
+(авторитетный источник, синхронизируйте с ним при расхождениях).
 
 ## Стек
 
@@ -59,46 +61,28 @@ npm run dev
   `session-repository.ts`. Не вызывается на каждый запрос; предполагается
   запуск по расписанию (см. Stage 3 ниже).
 
-## Известное ограничение текущего sandbox-окружения разработки
+## Prisma 7 конфигурация
 
-`npx prisma format` / `validate` / `generate` (и `migrate`) в этой
-sandbox-среде разработки не могут быть выполнены: CLI обращается к
-`binaries.prisma.sh` за schema-engine, а исходящий трафик на этот домен
-заблокирован политикой sandbox (`x-deny-reason: host_not_allowed`,
-подтверждено прямым `curl -v`). Это не связано с содержимым схемы или
-кода — на обычной машине/CI с доступом в интернет команды работают
-штатно.
+Начиная с Prisma 7.9.0, `datasource { url / directUrl }` в `schema.prisma`
+больше не поддерживается (`P1012`) — строки подключения для CLI-команд
+(`generate`/`migrate`/`validate`) заданы в `prisma.config.ts` (читает
+`DIRECT_URL`). Runtime `PrismaClient` (`src/lib/db/prisma.ts`) это не
+затрагивает — он получает `DATABASE_URL` напрямую через
+`@prisma/adapter-pg`.
 
-Текущий статус проверок в этой sandbox-среде:
+Текущий статус проверок (полный прогон, включая `prisma generate`):
 
 | Проверка | Статус |
 |---|---|
+| `npx prisma generate` | **PASSED** |
 | `npm run lint` | **PASSED** |
 | `npm run test` | **PASSED** |
-| Prisma CLI (`format`/`validate`/`generate`) | **BLOCKED BY SANDBOX** |
-| `npm run typecheck` | **BLOCKED UNTIL PRISMA CLIENT GENERATION** |
-| `npm run build` | **BLOCKED UNTIL PRISMA CLIENT GENERATION** |
+| `npm run typecheck` | **PASSED** |
+| `npm run build` | **PASSED** |
 
-`src/generated/prisma` не существует в этой среде, поэтому typecheck/build
-не проходят полностью здесь — запустите обе команды локально после
+`src/generated/prisma` — сгенерированный клиент, в `.gitignore`;
+регенерируйте его после каждого `npm install` командой
 `npx prisma generate`.
-
-## Stage 3 (реализовано)
-
-- `src/config/gacha.ts` — конфигурация баннеров, единственный источник
-  игровых констант.
-- `src/lib/gacha-math/*` — чистые функции (ресурсы, pity, гарантия,
-  прогноз) + 94 unit-теста, без soft pity/вероятностной модели.
-- `src/server/services/gacha-calculator-service.ts` — сервисный слой,
-  только чтение, не принимает userId от клиента.
-- `POST /api/calculator` — API калькулятора.
-
-## Stage 4 (план)
-
-- Полноценные страницы: Калькулятор (UI поверх `/api/calculator`),
-  Календарь, Статистика, Настройки.
-- Сервисы записи pity/баланса с diff-подтверждением и idempotency.
-- Настроить запуск `purgeStaleSessions()` по расписанию.
 
 ## Команды
 
@@ -118,15 +102,22 @@ src/
     navigation/         # нижняя навигация
     providers/           # ThemeProvider, AuthProvider
     ui/                  # общие UI-примитивы
+  config/               # gacha.ts — константы баннеров
+  features/
+    calculator/         # UI калькулятора круток
+    calendar/           # UI календаря: month-grid, day-detail, series/exception/split формы
+    profile/            # формы Settings-страницы (pity/ресурсы) с diff-preview
   lib/
     auth/                # сессии, dev-auth
+    calendar-math/        # чистая арифметика LocalDate, recurrence, forecast
+    gacha-math/           # чистые формулы pity/гарантии/прогноза
     telegram/             # верификация initData, клиентская обёртка
     validation/           # Zod-схемы
     db/                  # Prisma client singleton
     api/                 # общий формат ошибок
   server/
     repositories/        # доступ к БД
-    services/            # бизнес-оркестрация (auth, current user)
+    services/            # бизнес-оркестрация (auth, calculator, calendar, banner-state, resource)
   types/                 # окружающие типы (Telegram WebApp)
 prisma/
   schema.prisma

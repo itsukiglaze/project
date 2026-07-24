@@ -1,5 +1,7 @@
 "use client";
 
+import { useFocusTrap } from "./use-focus-trap";
+
 export type EditScope = "THIS" | "THIS_AND_FUTURE" | "ALL";
 
 export function EditScopeDialog({
@@ -9,11 +11,15 @@ export function EditScopeDialog({
   onSelect: (scope: EditScope) => void;
   onCancel: () => void;
 }) {
+  const containerRef = useFocusTrap<HTMLDivElement>(onCancel);
+
   return (
     <div
+      ref={containerRef}
       role="dialog"
       aria-modal="true"
       aria-label="Область изменения"
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
     >
       <div

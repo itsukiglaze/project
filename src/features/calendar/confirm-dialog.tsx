@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import { useFocusTrap } from "./use-focus-trap";
 
 export function ConfirmDialog({
   title,
@@ -16,21 +17,15 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    confirmButtonRef.current?.focus();
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
+  const containerRef = useFocusTrap<HTMLDivElement>(onCancel, { initialFocusRef: confirmButtonRef });
 
   return (
     <div
+      ref={containerRef}
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     >
       <div className="w-full max-w-sm space-y-3 rounded-2xl bg-surface p-4">

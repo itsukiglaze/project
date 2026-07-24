@@ -1,8 +1,8 @@
 # DEVELOPMENT_STATUS.md — Proxy Pull Planner
 
-Snapshot as of end of Stage 5D (calendar UI). This document is the
-authoritative "where things stand" reference for continuing this project
-in Claude Code.
+Snapshot as of end of Stage 5D (calendar UI), fully verified. This document
+is the authoritative "where things stand" reference for continuing this
+project in Claude Code.
 
 ---
 
@@ -17,39 +17,38 @@ in Claude Code.
 | **5A** | Calendar domain model: Prisma schema for `CalendarEventSeries` / `CalendarEventException` / extended `CalendarTransaction`; pure `lib/calendar-math/*` (LocalDate arithmetic with zero JS `Date` in recurrence logic, recurrence expansion, exception application, actual/virtual merge, bounded forecast) | Done |
 | **5B** | Calendar repositories + services: series CRUD, split ("this and future"), exception upsert, one-time transaction CRUD, read-only occurrence/forecast services — same optimistic-concurrency + idempotency + audit pattern as 4B | Done |
 | **5C** | Calendar API routes (10 endpoints) + Zod schemas + uniform error mapping (`NOT_FOUND->404`, `STALE_STATE->409`, `IDEMPOTENCY_KEY_REUSED->409`, `INVALID_OCCURRENCE->422`, `VALIDATION_ERROR->400`) | Done |
-| **5D** | Calendar UI: month grid, day-detail sheet, series/exception/split flows, forecast panel, client API layer, lightweight query-cache + mutation hooks, idempotency-key management, ~110 component/hook tests | Done, verification tail-end in progress (see Section 3) |
+| **5D** | Calendar UI: month grid, day-detail sheet, series/exception/split flows, forecast panel, client API layer, lightweight query-cache + mutation hooks, idempotency-key management, modal focus trap, ~150 component/hook tests | Done, fully verified |
 
 ## 2. Current stage
 
-**Stage 5D, tail end of verification.** The last in-progress work item was
-fixing and testing the exception auto-retry-with-corrected-version
-behavior in `src/features/calendar/use-exception-mutation.ts` (same
-idempotency key across the guess + retry, retries at most once, does not
-hide a second conflict). New test cases were added to
-`use-exception-mutation.test.ts` for this. **At the point this export was
-requested, the following had not yet been completed:**
+**Stage 5D: complete and fully verified**, including the verification-tail
+items that were still open as of the previous snapshot:
 
-- `SeriesForm` direct tests (create/edit mode, INCOME/EXPENSE, DAILY/WEEKLY/MONTHLY, end conditions, validation, timezone-present-on-create-absent-on-edit) — not yet written.
-- End-to-end split-flow component test (select "this and future" -> submit -> verify the split call's exact args + cache invalidation + dialog close + STALE_STATE stays visible/retryable) — not yet written.
-- Explicit mobile/accessibility test pass (touch targets, dialog focus-in/focus-return, Escape, aria labels, no background interaction while modal open) — partially covered (ConfirmDialog has focus/Escape tests; a systematic pass across all dialogs was requested but not completed).
-- Full-repo `npm run test`, `npm run lint`, `npm run typecheck`, `npm run build` — the last confirmed clean full-suite run was before the final `use-exception-mutation.ts` edit in this session. That file's tests were extended but a full-suite re-run had not completed before this export was requested.
+- `SeriesForm` direct tests (`series-form.test.tsx`, 19 cases): create/edit/split mode, INCOME/EXPENSE toggling + source field visibility, DAILY/WEEKLY/MONTHLY conditional fields, end-condition switching, validation-blocked submit, and the start-date field being editable only in create mode (edit/split show it as frozen text instead).
+- End-to-end "this and future" split-flow component test (`calendar-page.test.tsx`): drives the real UI — day cell -> `DayDetailSheet` -> edit-scope -> "это и будущие вхождения" -> pre-filled `SeriesForm` (split mode) -> submit — and asserts the exact `splitSeries()` call args, that series-list/occurrences/forecast queries are all refetched afterward, that the dialog closes on success, and that a `STALE_STATE` response leaves the dialog open and retryable without looping the request.
+- A modal focus trap + focus restoration (`use-focus-trap.ts`, applied to every dialog — `ConfirmDialog`, `EditScopeDialog`, `DayDetailSheet`, and the series-form/split/override-occurrence dialogs in `calendar-page.tsx`): Tab/Shift+Tab now wrap within the open dialog instead of reaching background content, Escape closes it, and focus returns to whatever triggered it on close. A nested dialog (e.g. the delete-confirmation `ConfirmDialog` opened from inside `DayDetailSheet`) suspends its parent's trap via an `active` flag so the two don't double-handle Escape.
+- A systematic accessibility pass across every dialog reachable from `CalendarPage` (`modal-accessibility.test.tsx`, 8 cases): role="dialog" + `aria-modal="true"` + an accessible name, focus moving inside on open, Escape closing without triggering any mutation, and focus returning to the exact trigger where that trigger stays mounted.
+- Mobile touch-target tests (`mobile-interactions.test.tsx`): every interactive control in the calendar dialogs/forms (type toggles, weekday picker, Cancel/Save, month navigation, day cells) carries the `min-h-11`/`h-11` (44px) sizing convention already established elsewhere in the codebase.
+- Full-repo `npm run test` (623/623), `npm run lint`, `npm run typecheck`, and `npm run build` all pass cleanly — see Section 8 for what else had to be fixed to get typecheck/build unblocked (a Prisma 7 config-format change, unrelated to Stage 5D itself).
 
-**Action needed immediately upon resuming:** re-run the full verification
-sequence below and treat anything it surfaces as the first priority.
-
-```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
-```
+`CalendarPage` still has no *dedicated, exhaustive* unit-test file for every
+prop/branch — its wiring is now covered end-to-end via
+`calendar-page.test.tsx` and `modal-accessibility.test.tsx` for the split
+flow and every modal transition, which was the specific gap called out
+below in Section 3 (superseded) and Section 8.
 
 ## 3. Known-incomplete test coverage (explicit, not hidden)
 
-- `SeriesForm` (`src/features/calendar/series-form.tsx`) has no dedicated test file. It's exercised indirectly through `calendar-page.tsx`'s modals but not directly unit-tested for: create vs edit vs split mode, INCOME/EXPENSE toggling, DAILY/WEEKLY/MONTHLY field visibility, end-condition switching, validation-blocked submit, and the timezone field being present only in create mode.
-- No end-to-end "select this-and-future -> submit -> verify exact split() args" test exists yet.
-- `CalendarPage` itself (the orchestrator) has no dedicated test file — only its constituent pieces (`DayDetailSheet`, `EditScopeDialog`, `SeriesListPanel`, the mutation/query hooks) are unit-tested in isolation. The wiring between "edit-scope selection -> correct modal opens with correct pre-filled series" is therefore not directly verified by an automated test, only by code inspection (documented in the Stage 5D conversation as manually inspected).
-- Systematic "no interaction with background content while a modal is open" (focus trap / inert background) is not implemented or tested — the modals here are visually overlaid (`fixed inset-0` + backdrop) but there is no focus trap; a keyboard user tabbing through a page with `DayDetailSheet` or `SeriesForm` open could tab into background content. This is a real accessibility gap, not just a missing test.
+All four items previously listed here (`SeriesForm` direct tests, the
+end-to-end split-flow test, `CalendarPage`'s edit-scope wiring, and the
+modal focus trap) were closed out — see Section 2. What's left, by design
+rather than oversight:
+
+- `CalendarPage` is covered by targeted flow/wiring tests
+  (`calendar-page.test.tsx`, `modal-accessibility.test.tsx`), not an
+  exhaustive prop/branch unit-test file — every modal transition and the
+  split flow are exercised end-to-end through the real component tree
+  instead.
 
 ## 4. Known bugs fixed during development (for history/context — don't reintroduce these)
 
@@ -67,21 +66,23 @@ npm run build
 12. **Stage 5C**: `seriesTemplateSchema.type` used `z.enum(["INCOME","EXPENSE"])`, producing a plain string-literal type incompatible with the service's actual `RecurringTransactionType` enum members — fixed via `z.union([z.literal(TransactionType.INCOME), z.literal(TransactionType.EXPENSE)])`.
 13. **Stage 5D**: `calendar-page.tsx` initially used a `requireSeries()` helper that re-fetched the entire series list from the network just to resolve one series by id for the edit-scope flow — removed; `CalendarPage` now lifts a single `useSeriesListQuery()` call and reuses that already-loaded array everywhere it needs a series lookup.
 14. **Stage 5D**: `use-calendar-query.ts` had two React-Compiler-flagged violations (mutating a ref during render; calling `setState` synchronously inside a `useEffect`) — fixed by moving the ref sync into its own effect and switching to a stale-while-revalidate pattern where `load()` never calls `setState` outside of the resolved-promise callback.
-15. **Stage 5D (last fix in this session)**: the cancel/override-occurrence flows hardcoded `expectedVersion=0` when calling the exception upsert — wrong whenever an exception already existed for that occurrence, which would silently surface `STALE_STATE` with no user-visible feedback. Fixed in `use-exception-mutation.ts`: on a `STALE_STATE` response to an `expectedVersion===0` guess, automatically retries once using the server-reported `current.version`, reusing the same idempotency key (derived from `{seriesId, occurrenceDate, input}`, deliberately excluding `expectedVersion`). A second conflict on the retry is surfaced as the final error, not hidden or looped.
+15. **Stage 5D**: the cancel/override-occurrence flows hardcoded `expectedVersion=0` when calling the exception upsert — wrong whenever an exception already existed for that occurrence, which would silently surface `STALE_STATE` with no user-visible feedback. Fixed in `use-exception-mutation.ts`: on a `STALE_STATE` response to an `expectedVersion===0` guess, automatically retries once using the server-reported `current.version`, reusing the same idempotency key (derived from `{seriesId, occurrenceDate, input}`, deliberately excluding `expectedVersion`). A second conflict on the retry is surfaced as the final error, not hidden or looped.
+16. **Stage 5D verification (this session)**: reconstructing the project from an archive export and running `npx prisma generate` for real (not just reasoning about it) surfaced that Prisma 7.9.0 rejects `datasource { url / directUrl }` inside `schema.prisma` — a breaking config-format change, not the sandbox-egress block Section 8 previously assumed. Fixed by moving the connection URLs into a new `prisma.config.ts` (read via `DIRECT_URL`, needed only by the CLI — the runtime `PrismaClient` was already unaffected, since it gets its connection string from `@prisma/adapter-pg` directly). Added `dotenv` as an explicit devDependency since `prisma.config.ts` needs it to read `.env` and it was previously only a transitive one.
+17. **Stage 5D verification (this session)**: six calendar test files (`api.test.ts`, `day-detail-sheet.test.tsx`, `day-summary.test.ts`, `transaction-form.test.tsx`, `use-series-mutations.test.ts`, `use-transaction-mutations.test.ts`) used raw string literals (`"INCOME"`, `"POLYCHROME"`, etc.) as fixture values where the actual domain types are real TS string enums — `vitest run` never caught this because it type-strips rather than type-checks, and `tsc --noEmit` had never completed a clean run against the generated Prisma client until now. Fixed by importing and using the actual enum members.
+18. **Stage 5D (this session)**: implemented the modal focus trap that Section 5 previously listed as missing — see `use-focus-trap.ts` and Section 2.
 
 ## 5. Technical debt / deliberate simplifications
 
 - **No React Query / SWR** — a hand-rolled `query-cache.ts` (subscribe/invalidate-by-prefix) + `use-calendar-query.ts` generic hook stands in for a real query library, matching this project's established "no extra dependencies for what a small hook can do" convention. Query-key strings (`CALENDAR_QUERY_KEYS`) are structured compatibly if you later want to migrate to a real library.
-- **No focus trap in modals.** Dialogs (`DayDetailSheet`, the `SeriesForm` sheet, `EditScopeDialog`, `ConfirmDialog`) are visually modal (backdrop + `fixed inset-0`) but do not prevent Tab from reaching background content. `ConfirmDialog` autofocuses its confirm button and closes on Escape; the others do not.
-- **Series-form / day-detail error surfacing is inconsistent with the Settings-page profile forms.** The Stage 4B profile forms show phase-based inline error banners (stale-state, network error, etc.) inside the form itself. The Stage 5D calendar forms do not yet surface `seriesMutations.state`/`exceptionMutation.state` failures inline — a failed submit just leaves the modal open with no visible explanation. This was explicitly flagged during Stage 5D as a known, accepted simplification, not an oversight.
+- **Series-form / day-detail error surfacing is inconsistent with the Settings-page profile forms.** The Stage 4B profile forms show phase-based inline error banners (stale-state, network error, etc.) inside the form itself. The Stage 5D calendar forms do not yet surface `seriesMutations.state`/`exceptionMutation.state` failures inline — a failed submit just leaves the modal open with no visible explanation (the mutation is not stuck, and a retry works — see `calendar-page.test.tsx`'s STALE_STATE case — there's just no visible banner explaining why the first attempt didn't close the dialog). This was explicitly flagged during Stage 5D as a known, accepted simplification, not an oversight, and remains untouched.
 - **`edit-scope` UX edge case**: if the user picks "this and future" or "entire series" from `EditScopeDialog` before the series list has finished loading, `findLoadedSeries()` returns `null` and the handler just returns — the dialog stays open with no error message.
 - **PULL is intentionally not recurring-eligible.** `CalendarEventSeries.type` only accepts `INCOME | EXPENSE` (enforced at the Zod layer and the service layer). One-time `CalendarTransaction` rows can still be `PULL`.
 - **`purgeStaleSessions()` / `purgeExpiredIdempotencyRecords()` exist but are not scheduled anywhere.** No cron/Vercel Cron job wiring exists yet.
-- **The generated Prisma Client (`src/generated/prisma`) does not exist in the sandbox this project was built in**, because that sandbox's egress allowlist blocks `binaries.prisma.sh` (confirmed via direct `curl -v`, header `x-deny-reason: host_not_allowed`). `npm run typecheck` and `npm run build` are BLOCKED there on ~17 errors all traced to this one root cause — 5 direct `Cannot find module '@/generated/prisma/client'` + ~12 `tx` implicit-`any` cascades in every `prisma.$transaction(async (tx) => ...)` call site. This is almost certainly not a problem in a normal environment with internet access. See Section 8 for exact commands.
 
 ## 6. Implementation decisions worth knowing about
 
-- **Rust-free Prisma client**: `generator client { provider = "prisma-client"; output = "../src/generated/prisma"; engineType = "client" }` + `@prisma/adapter-pg` + `pg`. Confirmed supported by the installed Prisma 7.9.0 via inspecting `node_modules/prisma/build/cli.js`. Note: `prisma generate` still needs the schema-engine binary regardless of `engineType` — that's what's blocked in the sandbox, not a Rust-vs-WASM query-engine issue.
+- **Rust-free Prisma client**: `generator client { provider = "prisma-client"; output = "../src/generated/prisma"; engineType = "client" }` + `@prisma/adapter-pg` + `pg`. Confirmed working end-to-end against the installed Prisma 7.9.0 (`npx prisma generate` succeeds; `src/generated/prisma` is `.gitignore`d and must be regenerated after `npm install`).
+- **Connection URLs live in `prisma.config.ts`, not `schema.prisma`.** Prisma 7.9.0 rejects `datasource { url / directUrl }` in the schema file outright (`P1012`); the CLI (generate/migrate/validate) now reads `DIRECT_URL` from `prisma.config.ts` instead, while the runtime `PrismaClient` (`src/lib/db/prisma.ts`) is unaffected — it already got its (pooled) `DATABASE_URL` via `@prisma/adapter-pg` directly, independent of the schema's datasource block.
 - **Every write endpoint uses the same shape**: Zod `.strict()` validation -> request-bound idempotency lookup (hash of the normalized payload) -> atomic `updateMany({ where: { id, userId, version: expectedVersion } })` for optimistic concurrency -> transactional audit log -> transactional idempotency-record write -> P2002-on-idempotency-record catch-and-replay for concurrent identical requests. Repeated intentionally across banner-state, resource-balance, calendar-series, calendar-exception, and calendar-transaction.
 - **`LocalDate` (`{year, month, day}`) is the only calendar-date representation in all math/domain code.** JS `Date` appears in exactly two places, both documented as mechanical serialization boundaries: `src/server/repositories/calendar-local-date.ts` (Prisma `@db.Date` boundary, using `Date.UTC(...)` explicitly) and `src/features/calendar/local-date-client.ts` / the forecast API route (`Intl.DateTimeFormat` to read "today" in a given timezone, then parsed back through `parseLocalDate`). `new Date(year, month, day)` is never used anywhere.
 - **Domain enums mirror Prisma enums by value, not by import.** `config/gacha.ts` and `lib/calendar-math/types.ts` define their own TS enums (BannerFamily, TransactionType, CurrencyType, IncomeSource, RecurrenceFrequency, RecurrenceEndType) matching the Prisma schema's string values, so pure math code stays fully Prisma-free and unit-testable without a generated client. The repository layer bridges the two via small cast functions, documented inline.
@@ -95,43 +96,32 @@ npm run build
 - Deployment target is Vercel + Supabase Postgres, reachable via `DATABASE_URL` (pooled) + `DIRECT_URL` (direct, for migrations).
 - The Telegram bot integration (BotFather registration, Menu Button, domain wiring) was never actually performed — only the server-side `initData` HMAC verification code exists and is unit-tested against synthetic signed payloads. No real bot token has ever been used.
 - Local dev outside Telegram relies on `DEV_AUTH_ENABLED=true` + `DEV_TELEGRAM_USER_ID=<id>`, hard double-gated to `NODE_ENV=development`.
-- `binaries.prisma.sh` being blocked is a sandbox-specific egress-allowlist limitation, not a property of Prisma or this codebase — re-verify this the moment the project runs somewhere with normal internet access.
+- This project has still never been migrated against a *real* Postgres database — `DATABASE_URL`/`DIRECT_URL` in `.env` are placeholders wherever this was verified, sufficient for `prisma generate`/`typecheck`/`build` (which don't open a connection) but not for `prisma migrate dev` or actually running the app.
 
 ## 8. Remaining roadmap
 
-**Immediate (finish Stage 5D properly):**
-1. Add `SeriesForm` direct tests (create/edit/split mode; INCOME/EXPENSE; DAILY/WEEKLY/MONTHLY; end conditions; validation; timezone shown only on create).
-2. Add an end-to-end "this and future" split-flow test asserting the exact `splitSeries()` call args, targeted cache invalidation, dialog close on success, and that `STALE_STATE` stays visible and retryable.
-3. Add a focus-trap (or at minimum a documented decision not to) for the modal dialogs; add the explicit mobile/accessibility test pass (touch targets, focus-in/focus-return, Escape everywhere, aria labels, background-inert-while-open).
-4. Re-run the full verification sequence (`lint`, `typecheck`, `test`, `build`) and resolve anything beyond the confirmed Prisma-generation blocker.
+**Stage 5D is complete** — see Section 2. Nothing outstanding from the
+previous "finish Stage 5D properly" list remains.
 
 **Stage 5E (not started):** scope not yet defined in this conversation.
 
 **Stage 6 (not started, explicitly out of scope so far):** analytics, trends, averages, charts, goals, statistics tab (`src/app/statistics/page.tsx` is still the original stub).
 
 **Always-outstanding infra tasks:**
-- Run the Prisma commands below on a machine with real internet access — this project's schema has never been migrated against a real database.
+- Run `npx prisma migrate dev --name init` against a real Supabase/Postgres `DATABASE_URL`/`DIRECT_URL` — this project's schema has never been migrated against a real database.
 - Wire `purgeStaleSessions()` and `purgeExpiredIdempotencyRecords()` to an actual schedule.
 - Real Telegram bot registration + Mini App domain/menu-button setup (BotFather).
-- Decide on and implement the modal focus-trap approach.
 
-### Exact commands to run first, in order, on a normal machine
+### Exact commands to run, in order, on a normal machine
 
 ```bash
 npm install
-cp .env.example .env
-npx prisma format
-npx prisma validate
-npx prisma generate
-npx prisma migrate dev --name init
+cp .env.example .env        # fill in real DATABASE_URL/DIRECT_URL before migrating
+npx prisma generate         # generates src/generated/prisma — no DB connection needed
+npx prisma migrate dev --name init   # needs a real DATABASE_URL/DIRECT_URL
 npm run lint
 npm run typecheck
 npm run test
 npm run build
 npm run dev
 ```
-
-If `prisma generate` succeeds (expected outside this sandbox), `typecheck`
-and `build` should go from "blocked" to fully passing with no further code
-changes needed — every blocked error in this project has been
-individually traced back to that single missing generated client.

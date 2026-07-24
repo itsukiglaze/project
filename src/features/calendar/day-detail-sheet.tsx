@@ -7,6 +7,7 @@ import type { MergedOccurrenceDto, TransactionInputDto } from "./api";
 import { TransactionForm, type EditableTransaction } from "./transaction-form";
 import { ConfirmDialog } from "./confirm-dialog";
 import { useTransactionMutations } from "./use-transaction-mutations";
+import { useFocusTrap } from "./use-focus-trap";
 
 export type VirtualOccurrenceAction = "cancel" | "edit";
 
@@ -30,6 +31,10 @@ export function DayDetailSheet({
   const [formMode, setFormMode] = useState<"none" | "create" | EditableTransaction>("none");
   const [pendingDelete, setPendingDelete] = useState<EditableTransaction | null>(null);
   const { state, create, update, remove, resetState } = useTransactionMutations();
+  // Suspended while the nested delete-confirmation dialog is open — that
+  // dialog owns its own trap/Escape handling, and both listening at once
+  // would double-handle Escape (closing this sheet AND the confirm dialog).
+  const containerRef = useFocusTrap<HTMLDivElement>(onClose, { active: pendingDelete === null });
 
   const actual = occurrences.filter(
     (o): o is Extract<MergedOccurrenceDto, { kind: "actual" }> => o.kind === "actual",
@@ -65,9 +70,11 @@ export function DayDetailSheet({
 
   return (
     <div
+      ref={containerRef}
       role="dialog"
       aria-modal="true"
       aria-label={`Детали дня ${formatLocalDate(date)}`}
+      tabIndex={-1}
       className="fixed inset-0 z-40 flex items-end justify-center bg-black/40"
     >
       <div

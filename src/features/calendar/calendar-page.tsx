@@ -17,6 +17,7 @@ import { MonthNavigation } from "./month-navigation";
 import { SeriesForm, type SeriesFormResult } from "./series-form";
 import { SeriesListPanel } from "./series-list-panel";
 import { ForecastPanel } from "./forecast-panel";
+import { useFocusTrap } from "./use-focus-trap";
 import { getTodayLocalDate } from "./local-date-client";
 import { summarizeOccurrencesByDay } from "./day-summary";
 import {
@@ -143,35 +144,26 @@ export function CalendarPage() {
       )}
 
       {(modal.kind === "create-series" || modal.kind === "edit-series") && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Серия"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-        >
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-4">
-            <SeriesForm
-              mode={modal.kind === "create-series" ? "create" : "edit"}
-              existing={modal.kind === "edit-series" ? modal.series : undefined}
-              submitting={seriesMutations.state.status === "loading"}
-              onCancel={() => setModal({ kind: "none" })}
-              onSubmit={async (result: SeriesFormResult) => {
-                if (modal.kind === "create-series") {
-                  const created = await seriesMutations.create(result.template, result.rule, timezone);
-                  if (created) setModal({ kind: "none" });
-                } else {
-                  const updated = await seriesMutations.update(
-                    modal.series.id,
-                    result.template,
-                    result.rule,
-                    modal.series.version,
-                  );
-                  if (updated) setModal({ kind: "none" });
-                }
-              }}
-            />
-          </div>
-        </div>
+        <SeriesFormDialog
+          mode={modal.kind === "create-series" ? "create" : "edit"}
+          existing={modal.kind === "edit-series" ? modal.series : undefined}
+          submitting={seriesMutations.state.status === "loading"}
+          onCancel={() => setModal({ kind: "none" })}
+          onSubmit={async (result: SeriesFormResult) => {
+            if (modal.kind === "create-series") {
+              const created = await seriesMutations.create(result.template, result.rule, timezone);
+              if (created) setModal({ kind: "none" });
+            } else {
+              const updated = await seriesMutations.update(
+                modal.series.id,
+                result.template,
+                result.rule,
+                modal.series.version,
+              );
+              if (updated) setModal({ kind: "none" });
+            }
+          }}
+        />
       )}
 
       {modal.kind === "delete-series-confirm" && (
@@ -258,33 +250,65 @@ export function CalendarPage() {
       )}
 
       {modal.kind === "split-series" && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Разделить серию"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-        >
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-4">
-            <SeriesForm
-              mode="split"
-              existing={modal.series}
-              splitDate={parseLocalDate(modal.occurrence.occurrenceDate)}
-              submitting={seriesMutations.state.status === "loading"}
-              onCancel={() => setModal({ kind: "none" })}
-              onSubmit={async (result: SeriesFormResult) => {
-                const split = await seriesMutations.split(
-                  modal.series.id,
-                  result.template,
-                  result.rule,
-                  parseLocalDate(modal.occurrence.occurrenceDate),
-                  modal.series.version,
-                );
-                if (split) setModal({ kind: "none" });
-              }}
-            />
-          </div>
-        </div>
+        <SeriesFormDialog
+          mode="split"
+          existing={modal.series}
+          splitDate={parseLocalDate(modal.occurrence.occurrenceDate)}
+          submitting={seriesMutations.state.status === "loading"}
+          onCancel={() => setModal({ kind: "none" })}
+          onSubmit={async (result: SeriesFormResult) => {
+            const split = await seriesMutations.split(
+              modal.series.id,
+              result.template,
+              result.rule,
+              parseLocalDate(modal.occurrence.occurrenceDate),
+              modal.series.version,
+            );
+            if (split) setModal({ kind: "none" });
+          }}
+        />
       )}
+    </div>
+  );
+}
+
+function SeriesFormDialog({
+  mode,
+  existing,
+  splitDate,
+  submitting,
+  onCancel,
+  onSubmit,
+}: {
+  mode: "create" | "edit" | "split";
+  existing?: SeriesRecordDto;
+  splitDate?: LocalDate;
+  submitting: boolean;
+  onCancel: () => void;
+  onSubmit: (result: SeriesFormResult) => void;
+}) {
+  const containerRef = useFocusTrap<HTMLDivElement>(onCancel);
+  const label = mode === "split" ? "Разделить серию" : "Серия";
+
+  return (
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+    >
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-4">
+        <SeriesForm
+          mode={mode}
+          existing={existing}
+          splitDate={splitDate}
+          submitting={submitting}
+          onCancel={onCancel}
+          onSubmit={onSubmit}
+        />
+      </div>
     </div>
   );
 }
@@ -302,12 +326,15 @@ function OccurrenceOverrideModal({
 }) {
   const [amount, setAmount] = useState(String(occurrence.amount));
   const result = parseNonNegativeInt(amount);
+  const containerRef = useFocusTrap<HTMLDivElement>(onCancel);
 
   return (
     <div
+      ref={containerRef}
       role="dialog"
       aria-modal="true"
       aria-label="Изменить это вхождение"
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     >
       <div className="w-full max-w-sm space-y-3 rounded-2xl bg-surface p-4">
