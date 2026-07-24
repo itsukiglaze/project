@@ -1,0 +1,505 @@
+// Proxy Pull Planner — Prisma schema
+// Money/game currency and pull counters are always integers (no Float).
+
+// Connection URLs live in prisma.config.ts (Prisma 7's config format no
+// longer supports `url`/`directUrl` in the schema file); the runtime
+// PrismaClient gets its (pooled) connection string via @prisma/adapter-pg
+// in src/lib/db/prisma.ts, independent of this datasource block.
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider   = "prisma-client"
+  output     = "../src/generated/prisma"
+  engineType = "client"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// A BannerFamily is a *channel category*, not a specific character/weapon.
+/// Pity is tracked per (user, BannerFamily) and carries over between
+/// consecutive banners of the SAME family. Pity never carries over between
+/// different families (e.g. Exclusive Agent pity is independent from
+/// W-Engine, Stable and Bangboo pity).
+enum BannerFamily {
+  EXCLUSIVE_AGENT
+  W_ENGINE
+  STABLE
+  BANGBOO
+}
+
+enum CurrencyType {
+  POLYCHROME
+  ENCRYPTED_MASTER_TAPE
+  MASTER_TAPE
+  BOOPON
+  MONOCHROME
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  PULL
+}
+
+enum IncomeSource {
+  DAILY
+  EVENT
+  QUEST
+  ENDGAME
+  MAIL
+  PROMO_CODE
+  BATTLE_PASS
+  MEMBERSHIP
+  PURCHASE
+  OTHER
+}
+
+enum GoalTargetType {
+  AGENT_COPIES
+  W_ENGINE_COPIES
+  AGENT_AND_W_ENGINE
+  PULL_AMOUNT
+  RESOURCE_AMOUNT
+}
+
+enum ThemePreference {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+enum RecurrenceFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum RecurrenceEndType {
+  NEVER
+  UNTIL_DATE
+  AFTER_COUNT
+}
+
+// ---------------------------------------------------------------------------
+// Core identity & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  /// Telegram user id. Can exceed 32-bit range — stored as BigInt, never
+  /// treated as trusted unless it came from a server-verified initData.
+  telegramId   BigInt  @unique
+  username     String?
+  firstName    String?
+  lastName     String?
+  languageCode String?
+  photoUrl     String?
+  /// IANA timezone (e.g. "Europe/Berlin"). Telegram does not provide this;
+  /// it is read client-side via Intl.DateTimeFormat().resolvedOptions().timeZone
+  /// and validated server-side. "UTC" is only a fallback.
+  timezone     String  @default("UTC")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
+
+  settings             UserSettings?
+  resourceBalance      ResourceBalance?
+  bannerStates         BannerState[]
+  calendarEntries      CalendarEntry[]
+  calendarTransactions CalendarTransaction[]
+  calendarEventSeries  CalendarEventSeries[]
+  goals                Goal[]
+  pullEvents           PullEvent[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+  idempotencyRecords   IdempotencyRecord[]
+
+  @@map("users")
+}
+
+/// Opaque, cryptographically random session tokens. The raw token is only
+/// ever stored in the HttpOnly cookie on the client; the database stores
+/// only its SHA-256 hash, so a DB leak does not expose usable session tokens.
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  userAgent String?
+  ipHash    String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  lastUsedAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model UserSettings {
+  id                            String          @id @default(uuid()) @db.Uuid
+  userId                        String          @unique @db.Uuid
+  user                          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme                         ThemePreference @default(SYSTEM)
+  language                      String          @default("ru")
+  timezone                      String          @default("UTC")
+  includeMonochromeAsPolychrome Boolean         @default(false)
+  defaultBannerFamily           BannerFamily    @default(EXCLUSIVE_AGENT)
+  createdAt                     DateTime        @default(now())
+  updatedAt                     DateTime        @updatedAt
+
+  @@map("user_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Resources & pity
+// ---------------------------------------------------------------------------
+
+/// Current balance snapshot. Source of truth for history is
+/// CalendarTransaction; this table is a denormalized cache kept consistent
+/// via DB transactions and reconcilable via a recompute-from-history routine.
+model ResourceBalance {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @db.Uuid
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  polychrome          Int      @default(0)
+  encryptedMasterTape Int      @default(0)
+  masterTape          Int      @default(0)
+  boopon              Int      @default(0)
+  monochrome          Int      @default(0)
+  /// Optimistic-concurrency counter. A PUT must send the version it last
+  /// read; a mismatch means someone else (or another tab/device) changed
+  /// this row since, and the write is rejected with a typed conflict
+  /// rather than silently overwriting a newer state.
+  version             Int      @default(1)
+  updatedAt           DateTime @updatedAt
+
+  @@map("resource_balances")
+}
+
+model BannerState {
+  id     String       @id @default(uuid()) @db.Uuid
+  userId String       @db.Uuid
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bannerFamily         BannerFamily
+  sRankPity            Int          @default(0)
+  aRankPity            Int          @default(0)
+  guaranteeActive      Boolean      @default(false)
+  lastSRankWasFeatured Boolean?
+  /// Only meaningful for BANGBOO: the currently selected target can change
+  /// without resetting pity.
+  selectedBangbooId    String?
+  /// Optimistic-concurrency counter — see ResourceBalance.version.
+  version              Int          @default(1)
+  updatedAt            DateTime     @updatedAt
+
+  @@unique([userId, bannerFamily])
+  @@map("banner_states")
+}
+
+// ---------------------------------------------------------------------------
+// Calendar
+// ---------------------------------------------------------------------------
+
+/// A recurring income/expense template + recurrence rule. Occurrences are
+/// VIRTUAL (computed by src/lib/calendar-math/recurrence.ts) until an
+/// explicit action materializes one into a real CalendarTransaction row —
+/// there is deliberately no lazy-on-read materialization: GET endpoints
+/// must stay side-effect free, and future occurrences stay virtual until
+/// a real transaction is recorded or a future explicit materialization
+/// job runs (not part of MVP).
+model CalendarEventSeries {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Recurring series are income/expense templates only. PULL entries are
+  /// one-off user actions (tied to an actual pull made at a specific
+  /// moment) and are NOT eligible for recurrence in MVP — rejected by
+  /// service-layer validation, not representable as a meaningful rule.
+  type         TransactionType
+  currencyType CurrencyType?
+  /// Always a positive magnitude — `type` determines direction when
+  /// applied to a balance. Never negative (see CalendarTransaction.amount).
+  amount       Int
+  source       IncomeSource?
+  bannerFamily BannerFamily?
+  note         String?
+
+  frequency RecurrenceFrequency
+  interval  Int                 @default(1)
+  /// 0 (Sunday) .. 6 (Saturday), no duplicates. Required and only
+  /// meaningful for WEEKLY.
+  daysOfWeek Int[]
+  /// 1..31. Required and only meaningful for MONTHLY. Clamped to the last
+  /// valid day of shorter months (e.g. 31 -> Feb 28/29) — see
+  /// src/lib/calendar-math/local-date.ts `clampDayOfMonth`.
+  dayOfMonth Int?
+  startDate  DateTime            @db.Date
+  /// Frozen at creation. Deliberately does NOT track the user's live
+  /// profile timezone — changing the profile timezone later must never
+  /// retroactively shift this series' already-scheduled occurrence dates.
+  timezone        String
+  endType         RecurrenceEndType @default(NEVER)
+  /// Required iff endType = UNTIL_DATE. Must be >= startDate.
+  endDate         DateTime?         @db.Date
+  /// Required iff endType = AFTER_COUNT. Must be >= 1.
+  occurrenceCount Int?
+
+  /// Soft-delete flag — deleting a series never removes history; it only
+  /// stops generating future virtual occurrences. Already-materialized
+  /// CalendarTransaction rows are untouched (their seriesId is preserved,
+  /// not nulled) and already-created CalendarEventException rows are
+  /// preserved as a record, though they stop being evaluated once
+  /// isActive is false.
+  isActive Boolean @default(true)
+
+  /// Set when this series was created by a "this and future occurrences"
+  /// split edit (see calendar-event-series-service.ts, Stage 5B) —
+  /// points at the series this one continues from. A predecessor series
+  /// keeps its own `endDate` clamped to just before the split point, and
+  /// is otherwise untouched — past materialized transactions linked to
+  /// the predecessor stay linked to the predecessor, never reassigned.
+  splitFromSeriesId String?               @db.Uuid
+  splitFromSeries   CalendarEventSeries?  @relation("SeriesSplitHistory", fields: [splitFromSeriesId], references: [id], onDelete: SetNull)
+  splitIntoSeries   CalendarEventSeries[] @relation("SeriesSplitHistory")
+
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  exceptions               CalendarEventException[]
+  materializedTransactions CalendarTransaction[]
+
+  @@index([userId])
+  @@index([splitFromSeriesId])
+  @@map("calendar_event_series")
+}
+
+/// A per-occurrence override or cancellation for one scheduled date of a
+/// CalendarEventSeries. Does not itself represent a real transaction —
+/// applying an exception to a virtual occurrence (see
+/// src/lib/calendar-math/exceptions.ts) is what produces the effective
+/// (possibly overridden, possibly cancelled) occurrence shown to the user
+/// or eventually materialized.
+model CalendarEventException {
+  id             String              @id @default(uuid()) @db.Uuid
+  seriesId       String              @db.Uuid
+  series         CalendarEventSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  /// The SCHEDULED date this exception applies to (per the series' own
+  /// rule) — not necessarily a date the series would still generate if
+  /// the rule changes later; exceptions are addressed by date, not index.
+  occurrenceDate DateTime            @db.Date
+  isCancelled    Boolean             @default(false)
+
+  /// MVP override scope: amount/currency/source/bannerFamily/note may be
+  /// overridden for a single occurrence. `type` (INCOME/EXPENSE) is
+  /// deliberately NOT overridable here — changing an occurrence's
+  /// fundamental direction is a data-modeling smell for a single
+  /// exception; cancel this occurrence and add a one-time transaction
+  /// instead if that's genuinely what's needed. Recurrence-rule fields
+  /// (frequency/interval/etc.) are also not overridable per-occurrence —
+  /// changing those is a split, not an exception.
+  amountOverride       Int?
+  currencyTypeOverride CurrencyType?
+  sourceOverride       IncomeSource?
+  bannerFamilyOverride BannerFamily?
+  noteOverride         String?
+
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([seriesId, occurrenceDate])
+  @@map("calendar_event_exceptions")
+}
+
+/// One row per calendar day. Acts as a thin wrapper carrying the day-level
+/// note; the actual income/expense operations live in CalendarTransaction.
+model CalendarEntry {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Calendar day only (no time component), stored independently of any
+  /// timestamp so it never shifts when the user's timezone changes.
+  localDate DateTime @db.Date
+  timezone  String
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions CalendarTransaction[]
+
+  @@unique([userId, localDate])
+  @@index([userId])
+  @@map("calendar_entries")
+}
+
+model CalendarTransaction {
+  id      String        @id @default(uuid()) @db.Uuid
+  userId  String        @db.Uuid
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryId String        @db.Uuid
+  entry   CalendarEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  /// Calendar day this operation belongs to (denormalized from entry for
+  /// query convenience) — kept in sync with entry.localDate.
+  localDate    DateTime         @db.Date
+  /// Optional precise instant the operation happened, if known.
+  occurredAt   DateTime?
+  timezone     String
+  type         TransactionType
+  currencyType CurrencyType?
+  /// Always a positive magnitude — `type` determines direction when this
+  /// is applied to a balance (INCOME adds, EXPENSE subtracts, PULL is a
+  /// pull-count deduction on its own currency axis). Never negative.
+  amount       Int
+  source       IncomeSource?
+  bannerFamily BannerFamily?
+  note         String?
+
+  /// Set only when this row materializes one occurrence of a recurring
+  /// series (see CalendarEventSeries) — NULL for one-time transactions.
+  seriesId String?              @db.Uuid
+  series   CalendarEventSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  /// Which SCHEDULED occurrence date (per the series' rule) this row
+  /// materializes. Kept as an explicit field distinct from `localDate`
+  /// rather than reusing `localDate` for the uniqueness constraint below
+  /// — `localDate` is "when this actually happened", `occurrenceDate` is
+  /// "which slot in the recurrence this fills"; a future backdated or
+  /// manually-adjusted materialization could in principle let these
+  /// diverge. NULL for one-time transactions.
+  occurrenceDate DateTime? @db.Date
+
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Idempotency for writes to this table is handled by the shared
+  // IdempotencyRecord mechanism (see prisma model below), consistent with
+  // every other write endpoint added in Stage 4B — NOT a bespoke
+  // per-table idempotencyKey column.
+
+  // At most one materialized row per (series, scheduled occurrence).
+  // seriesId/occurrenceDate are both NULL for one-time transactions;
+  // Postgres treats each NULL as distinct, so any number of one-time
+  // transactions coexist without colliding here.
+  @@unique([seriesId, occurrenceDate])
+  @@index([userId])
+  @@index([localDate])
+  @@index([bannerFamily])
+  @@index([createdAt])
+  @@index([seriesId])
+  @@map("calendar_transactions")
+}
+
+/// A user-reported "I pulled and here's what happened" event, used to
+/// safely update BannerState pity with a confirmed diff (see docs).
+model PullEvent {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bannerFamily  BannerFamily
+  occurredAt    DateTime     @default(now())
+  pullsInSeries Int
+  sRankPosition Int
+  wasFeatured   Boolean
+  pullsAfter    Int          @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([bannerFamily])
+  @@map("pull_events")
+}
+
+// ---------------------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------------------
+
+model Goal {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title                   String
+  bannerFamily            BannerFamily
+  targetType              GoalTargetType
+  targetCopies            Int            @default(1)
+  targetPulls             Int?
+  targetDate              DateTime?      @db.Date
+  includeCurrentResources Boolean        @default(true)
+  isActive                Boolean        @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("goals")
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency
+// ---------------------------------------------------------------------------
+
+/// Generic replay-guard for write endpoints whose target row is a
+/// single-row "current state" (resource_balances, banner_states) rather
+/// than an append-only history. Re-applying the SAME values twice is
+/// already harmless for the underlying row (it's a plain overwrite, not an
+/// additive operation like CalendarTransaction), but without this a
+/// network retry would still create a duplicate AuditLog entry for what
+/// was actually one user action. `action` namespaces the key per endpoint
+/// (e.g. "SAVE_RESOURCES", "SAVE_BANNER_STATE:EXCLUSIVE_AGENT").
+model IdempotencyRecord {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action           String
+  idempotencyKey   String
+  /// SHA-256 hex of the canonicalized (key-sorted) NORMALIZED request
+  /// payload. Binds the key to the specific request it was issued for —
+  /// reusing the same key with a different payload is a client bug, not a
+  /// legitimate retry, and must not silently replay the wrong result. See
+  /// src/lib/idempotency-hash.ts.
+  requestHash      String
+  responseSnapshot Json
+  createdAt        DateTime @default(now())
+  /// Retention: records older than this are safe to purge (see
+  /// purgeExpiredIdempotencyRecords in idempotency-repository.ts). Replay
+  /// only needs to work for as long as a client might reasonably retry —
+  /// not forever; defaults to 7 days from creation.
+  expiresAt        DateTime
+
+  @@unique([userId, action, idempotencyKey])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
