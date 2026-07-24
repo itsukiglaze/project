@@ -3,11 +3,13 @@
 Telegram Mini App для игроков Zenless Zone Zero: калькулятор круток, календарь
 доходов, статистика накоплений и цели с прогнозом.
 
-**Статус:** Stage 5D завершён и проверен (авторизация, калькулятор,
-календарь с повторяющимися сериями/исключениями/split-флоу). Статистика
-(`src/app/statistics/page.tsx`) — всё ещё заглушка, Stage 6. Подробная
-история этапов и известные ограничения — в `DEVELOPMENT_STATUS.md`
-(авторитетный источник, синхронизируйте с ним при расхождениях).
+**Статус:** Stage 6 завершён и проверен (авторизация, калькулятор,
+календарь с повторяющимися сериями/исключениями/split-флоу, статистика с
+балансами/pity/итогами/трендами). Цели (`Goal`) и история отдельных
+круток (`PullEvent`) — неактивные модели схемы, ещё не реализованы.
+Подробная история этапов и известные ограничения — в
+`DEVELOPMENT_STATUS.md` (авторитетный источник, синхронизируйте с ним при
+расхождениях).
 
 ## Стек
 
@@ -107,17 +109,21 @@ src/
     calculator/         # UI калькулятора круток
     calendar/           # UI календаря: month-grid, day-detail, series/exception/split формы
     profile/            # формы Settings-страницы (pity/ресурсы) с diff-preview
+    statistics/         # UI статистики: балансы, pity-сводка, итоги, тренд-график, тренды операций
   lib/
     auth/                # сессии, dev-auth
     calendar-math/        # чистая арифметика LocalDate, recurrence, forecast
     gacha-math/           # чистые формулы pity/гарантии/прогноза
+    statistics-math/      # чистая currency-safe агрегация + timeline для статистики
+    query/                 # общий generic query-hook (useQuery + query-cache), используется calendar и statistics
     telegram/             # верификация initData, клиентская обёртка
     validation/           # Zod-схемы
     db/                  # Prisma client singleton
     api/                 # общий формат ошибок
   server/
     repositories/        # доступ к БД
-    services/            # бизнес-оркестрация (auth, calculator, calendar, banner-state, resource)
+    services/            # бизнес-оркестрация (auth, calculator, calendar, banner-state, resource, statistics)
+    local-date.ts         # "сегодня" в часовом поясе пользователя (сервер)
   types/                 # окружающие типы (Telegram WebApp)
 prisma/
   schema.prisma
