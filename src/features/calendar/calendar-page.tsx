@@ -19,6 +19,7 @@ import { SeriesListPanel } from "./series-list-panel";
 import { ForecastPanel } from "./forecast-panel";
 import { OnboardingEmptyState } from "./onboarding-empty-state";
 import { SelectedDatePanel } from "./selected-date-panel";
+import { QuickAmountFormDialog } from "./quick-amount-form-dialog";
 import { useFocusTrap } from "./use-focus-trap";
 import { getTodayLocalDate } from "./local-date-client";
 import { summarizeOccurrencesByDay } from "./day-summary";
@@ -29,6 +30,12 @@ import {
   lastDateOfMonth,
   type YearMonth,
 } from "./month-grid";
+import { useLatestSnapshotQuery } from "@/features/resource-snapshots/use-resource-snapshot-queries";
+import { useSnapshotMutations } from "@/features/resource-snapshots/use-snapshot-mutations";
+import { SnapshotFormDialog } from "@/features/resource-snapshots/snapshot-form-dialog";
+import { SnapshotComparisonResult } from "@/features/resource-snapshots/comparison-result";
+import { snapshotMutationErrorMessage } from "@/features/resource-snapshots/mutation-state";
+import type { ResourceSnapshotComparisonDto } from "@/features/resource-snapshots/api";
 
 type VirtualOccurrence = Extract<MergedOccurrenceDto, { kind: "virtual" }>;
 
@@ -41,7 +48,9 @@ type Modal =
   | { kind: "edit-scope"; occurrence: VirtualOccurrence }
   | { kind: "override-occurrence"; occurrence: VirtualOccurrence }
   | { kind: "split-series"; occurrence: VirtualOccurrence; series: SeriesRecordDto }
-  | { kind: "cancel-occurrence-confirm"; occurrence: VirtualOccurrence };
+  | { kind: "cancel-occurrence-confirm"; occurrence: VirtualOccurrence }
+  | { kind: "quick-amount" }
+  | { kind: "update-balance" };
 
 export function CalendarPage() {
   const { user, status: authStatus } = useAuth();
@@ -65,6 +74,9 @@ export function CalendarPage() {
   const seriesQuery = useSeriesListQuery(queriesEnabled);
   const seriesMutations = useSeriesMutations();
   const exceptionMutation = useExceptionMutation();
+  const latestSnapshotQuery = useLatestSnapshotQuery(queriesEnabled);
+  const snapshotMutations = useSnapshotMutations();
+  const [balanceJustSaved, setBalanceJustSaved] = useState<ResourceSnapshotComparisonDto | null>(null);
 
   const weeks = useMemo(() => generateMonthGrid(yearMonth.year, yearMonth.month), [yearMonth]);
   const summaries = useMemo(
@@ -131,6 +143,42 @@ export function CalendarPage() {
           onAddSource={() => setModal({ kind: "create-series" })}
           onAddOneTime={() => openDayDetail(today)}
         />
+      )}
+
+      {!showOnboarding && (
+        <section className="space-y-2 rounded-2xl border border-border bg-surface p-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setModal({ kind: "create-series" })}
+              className="min-h-11 flex-1 rounded-xl border border-border text-xs font-semibold"
+            >
+              + Добавить источник
+            </button>
+            <button
+              type="button"
+              onClick={() => setModal({ kind: "quick-amount" })}
+              className="min-h-11 flex-1 rounded-xl border border-border text-xs font-semibold"
+            >
+              + Добавить сумму
+            </button>
+            <button
+              type="button"
+              onClick={() => setModal({ kind: "update-balance" })}
+              className="min-h-11 flex-1 rounded-xl bg-accent-yellow text-xs font-bold text-black"
+            >
+              Обновить баланс
+            </button>
+          </div>
+          <p className="text-xs text-muted">
+            Источники и суммы планируют поступления. Баланс фиксирует, сколько ресурсов у вас
+            фактически сейчас.
+          </p>
+        </section>
+      )}
+
+      {balanceJustSaved && modal.kind === "none" && (
+        <SnapshotComparisonResult snapshot={balanceJustSaved} />
       )}
 
       <ForecastPanel enabled={queriesEnabled} />
@@ -202,6 +250,39 @@ export function CalendarPage() {
           occurrences={occurrencesForDay(modal.date)}
           onClose={() => setModal({ kind: "none" })}
           onEditSeriesOccurrence={handleEditSeriesOccurrence}
+        />
+      )}
+
+      {modal.kind === "quick-amount" && (
+        <QuickAmountFormDialog date={today} timezone={timezone} onClose={() => setModal({ kind: "none" })} />
+      )}
+
+      {modal.kind === "update-balance" && (
+        <SnapshotFormDialog
+          today={today}
+          prefillItems={
+            latestSnapshotQuery.status === "success" && latestSnapshotQuery.data.snapshot
+              ? latestSnapshotQuery.data.snapshot.record.items
+              : []
+          }
+          submitting={snapshotMutations.state.status === "loading"}
+          errorMessage={snapshotMutationErrorMessage(snapshotMutations.state)}
+          onCancel={() => setModal({ kind: "none" })}
+          onSubmit={async (result) => {
+            const latest = latestSnapshotQuery.status === "success" ? latestSnapshotQuery.data.snapshot : null;
+            const isSameDate = latest !== null && latest.record.localDate === formatLocalDate(result.localDate);
+            const expectedVersion = isSameDate ? latest!.record.version : 0;
+            const saved = await snapshotMutations.save(
+              result.localDate,
+              { timezone, note: result.note, items: result.items },
+              expectedVersion,
+            );
+            if (saved) {
+              setModal({ kind: "none" });
+              setBalanceJustSaved(saved.snapshot);
+              snapshotMutations.resetState();
+            }
+          }}
         />
       )}
 

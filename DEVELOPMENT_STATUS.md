@@ -1,6 +1,6 @@
 # DEVELOPMENT_STATUS.md — Proxy Pull Planner
 
-Snapshot as of Stage 7 (Production Readiness), fully verified. This
+Snapshot as of Stage 10 (Resource Snapshots), fully verified. This
 document is the authoritative "where things stand" reference for
 continuing this project in Claude Code.
 
@@ -25,8 +25,16 @@ continuing this project in Claude Code.
 | **6E** | LocalDate wire-serialization audit and fix (the Section 5/item-19 flagged gap): centralized `src/lib/api/calendar-dto.ts` DTO/serializer module; every calendar route now explicitly serializes `LocalDate` fields to "YYYY-MM-DD" before `NextResponse.json()`; widened `merge.ts`'s `ActualOccurrence` (id/source/bannerFamily/note/version) so a displayed one-time transaction returned via `/api/calendar/occurrences` is actually editable/deletable (statistics-service.ts's separate `listActualOccurrencesInRange` read was left as-is — see Section 5, still a deliberate tradeoff, not something this fix removed) | Done |
 | **7** | Production readiness: first real Prisma migration (this project had never been migrated before — see Section 9), a real Telegram-login bug found and fixed (empty `initData` was rejected by Zod before ever reaching the dev-auth fallback, making local dev outside Telegram completely unreachable), startup env-var validation (`src/instrumentation.ts`), a scheduled housekeeping endpoint for the two purge routines that existed but were never wired up, Docker + Vercel deployment configs, baseline security headers, one composite DB index, a real production auth 500 found and fixed (Prisma never negotiated TLS to Supabase), and a full live end-to-end verification pass against a real Postgres database — see Section 9 for the complete writeup | Done |
 | **9** | Alternative Telegram client compatibility: bounded-wait launch detection (handles clients like AyuGram that populate `initData` late or not at all), a typed diagnostics/capability detector, a secure Telegram Login Widget web-login fallback (separate protocol + CSRF nonce, never a bypass of Telegram's own signature check), Telegram theme/viewport/safe-area CSS integration, privacy-safe structured launch diagnostics — see Section 10 for the complete writeup | Done |
+| **10** | Resource Snapshots: new `ResourceSnapshot`/`ResourceSnapshotItem` Prisma models (immutable, dated, per-currency observed balances), full repository/service/API stack (same optimistic-concurrency + idempotency + audit pattern as every prior write path), pure comparison math, a "+ Добавить сумму" quick one-time-transaction entry point on Calendar (reusing the existing `CalendarTransaction` infrastructure, no new backend), a "Баланс ресурсов сегодня" card + prefilled "Обновить баланс" form + "История баланса" list, atomic `ResourceBalance` sync — see Section 11 for the complete writeup | Done |
 
 ## 2. Current stage
+
+**Stage 10: complete and fully verified.** Users can now log a quick
+one-time income/expense amount directly from Calendar, and separately
+track their actual in-game resource totals day-to-day with automatic
+delta-vs-previous comparison — see Section 11 for the data model, the
+source-of-truth decision, and the explicit confirmation that a snapshot
+delta is never auto-classified as calendar income.
 
 **Stage 9: complete and fully verified.** The app now degrades gracefully
 on Telegram clients that don't populate Mini App `initData` reliably
@@ -151,8 +159,9 @@ rather than oversight:
 
 ## 8. Remaining roadmap
 
-**Stage 5D, Stage 6, Stage 6E, Stage 7, and Stage 9 are all complete** —
-see Section 2. Nothing outstanding from any "finish properly" list remains.
+**Stage 5D, Stage 6, Stage 6E, Stage 7, Stage 9, and Stage 10 are all
+complete** — see Section 2. Nothing outstanding from any "finish
+properly" list remains.
 
 **Stage 5E (not started):** scope not yet defined in this conversation.
 
@@ -163,6 +172,16 @@ see Section 2. Nothing outstanding from any "finish properly" list remains.
 **No priority follow-up remains from Stage 7** — see Section 9 for the full list of what was verified/fixed/documented. The only genuinely-open items are external, one-time, human actions that no code change can complete: real BotFather bot registration (Section 9 checklist) and provisioning a real production Postgres instance (Supabase or otherwise) to run `prisma migrate deploy` against.
 
 **No priority follow-up remains from Stage 9** — see Section 10 for the full writeup, including the one new BotFather step it adds (`/setdomain` for the Login Widget fallback) and what genuinely cannot be fixed client-side (Section 10.6).
+
+**One known, accepted simplification remains from Stage 10** — see
+Section 11.6: the balance-update form's optimistic-concurrency guess can
+be wrong for the specific case of backfilling an arbitrary past date
+(not today, not the current latest) that already has its own saved
+snapshot outside of "История баланса → Изменить". This never corrupts
+data (the server still rejects the write as a conflict), it just doesn't
+yet show a version-specific explanation on that one path — consistent
+with the same accepted gap already documented for calendar forms
+(Section 5, "Series-form / day-detail error surfacing is inconsistent").
 
 **Always-outstanding infra tasks:**
 - Real Telegram bot registration + Mini App domain/menu-button setup (BotFather) — see Section 9 checklist, plus Section 10's `/setdomain` addition for the web-login fallback.
@@ -578,3 +597,229 @@ fallback specifically needs:
 - [ ] Set `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (no `@`) to the same bot as `TELEGRAM_BOT_TOKEN`.
 - [ ] Set `SESSION_SECRET` to a real random value in production — without it, `GET /api/auth/telegram-login/nonce` 503s and the fallback is simply unavailable (the primary Mini App path is unaffected either way).
 - [ ] Both are optional — omit either to leave the fallback disabled entirely if it isn't wanted yet.
+
+## 11. Stage 10 — Resource Snapshots
+
+**Problem this stage solves**: Calendar only modeled *planned/recorded*
+activity (`CalendarTransaction`, recurring `CalendarEventSeries`). Users
+also periodically want to (a) log a single quick amount without going
+through the day-detail sheet, and (b) type in their *actual observed*
+in-game totals and see exactly what changed since the last time they
+checked — without retyping every currency or manually subtracting
+yesterday's numbers.
+
+### 11.1 Data model
+
+Two new models, added via a real migration
+(`prisma/migrations/20260725155114_add_resource_snapshots/`), verified to
+apply cleanly both to a genuinely empty database and on top of the
+existing two migrations (i.e. the current production schema shape):
+
+```
+ResourceSnapshot        — one immutable row per (user, localDate)
+  id, userId, localDate, capturedAt, timezone, note, version,
+  createdAt, updatedAt
+  @@unique([userId, localDate])   // one logical snapshot per day, ever
+  @@index([userId])
+
+ResourceSnapshotItem    — one row per currency actually entered that day
+  id, snapshotId, currencyType, amount
+  @@unique([snapshotId, currencyType])
+```
+
+A currency simply absent from a snapshot's items means "not entered this
+time" — a distinct, preserved state, never coerced to 0. Saving again for
+a date that already has a snapshot **replaces** that date's items
+(delete-then-recreate inside the same transaction as the version check);
+every other date's snapshot is untouched. `localDate` is computed from the
+user's own timezone client-side (`getTodayLocalDate()`, the same
+`Intl.DateTimeFormat`-based util the Calendar feature already uses) —
+never derived from a raw UTC instant.
+
+### 11.2 Source-of-truth decision (explicit, as required)
+
+- **`ResourceSnapshot`** is the append-only, dated history of observed
+  totals — the thing "История баланса" reads.
+- **`ResourceBalance`** (pre-existing, Stage 4B) remains the *single*
+  "current balance" row the Calculator's "Сохранённые данные" reads —
+  completely unchanged in shape, unchanged in how the Calculator reads it.
+- **The link**: every successful snapshot save or delete calls
+  `syncResourceBalanceFromLatestSnapshot` (`resource-snapshot-repository.ts`)
+  **inside the same `prisma.$transaction`** as the snapshot write. It
+  always re-derives "the latest snapshot by localDate" from scratch and
+  copies only the currencies that snapshot actually has onto
+  `ResourceBalance`, leaving any currency that snapshot doesn't track at
+  its previous `ResourceBalance` value (never zeroed). This is why saving
+  a **backfilled date older than the current latest** correctly leaves
+  `ResourceBalance` unchanged (re-deriving finds the same latest snapshot
+  as before), and why **deleting** the current-latest snapshot correctly
+  rolls `ResourceBalance` back to whatever is now the latest (or leaves it
+  alone if no snapshot remains at all — deleting history must never wipe
+  the current balance to 0 as a side effect).
+- **`CalendarTransaction`** (Stage 5) is untouched and orthogonal — see
+  11.4.
+- There is exactly one "current balance" row (`ResourceBalance`) at all
+  times; nothing else can drift from it, because nothing else is ever
+  read as "the current balance."
+
+### 11.3 Comparison semantics
+
+Pure, stateless, unit-tested functions in
+`src/lib/resource-snapshot-math/comparison.ts` — deltas are **never**
+stored; they are recomputed from the two raw snapshots on every read, so
+editing or deleting a historical snapshot automatically changes what the
+*next* read of its neighbors shows, with no separate recalculation step
+anywhere (verified explicitly in `resource-snapshot-service.test.ts`: the
+same history/comparison call before vs. after simulating an edit or a
+delete produces the correct new deltas).
+
+- `no_previous_snapshot` — no snapshot existed before this one at all.
+- `previous_value_unavailable` — a real previous snapshot exists but
+  didn't track this specific currency (never silently treated as 0).
+- `positive` / `negative` / `unchanged` — otherwise, `delta = current -
+  previous`.
+- The "previous" snapshot is always **the latest one strictly before the
+  date being compared** — not necessarily the global latest, and not
+  necessarily yesterday. History entries each compare against their own
+  immediate predecessor, so non-consecutive dates ("since 20 июля", not
+  falsely "since вчера") are handled correctly by construction.
+- Different currencies are never summed or converted into each other at
+  any point in this stack.
+
+### 11.4 Snapshot deltas are never calendar income (explicit confirmation, as required)
+
+`saveResourceSnapshot`/`deleteResourceSnapshot`
+(`resource-snapshot-service.ts`) touch exactly two tables:
+`resource_snapshots`/`resource_snapshot_items` and (via the sync step)
+`resource_balances`. Neither one ever calls into
+`calendar-transaction-service.ts`, `calendar-transaction-repository.ts`,
+or anything that creates a `CalendarTransaction` row — confirmed by
+reading every call site, not just by convention. A positive delta is
+*never* auto-classified as income (the user might have converted currency,
+corrected a mistake, or the delta might just be a partial re-entry); the
+UI never offers an automatic "log this as income" action. The spec's
+optional "Создать операцию из изменения" explicit-confirmation action was
+**not** built in this first version (explicitly not required).
+
+### 11.5 API + UI
+
+Routes (all under `getCurrentUser()` auth, same Zod `.strict()` +
+optimistic-concurrency + request-bound-idempotency + transactional-audit-log
+pattern as every other write path in this codebase):
+
+- `GET /api/resource-snapshots/latest` — latest snapshot + comparison vs.
+  the one before it (`null` when the user has never saved one).
+- `GET /api/resource-snapshots?from=&to=` — ascending history, each entry
+  compared against its own predecessor (366-day range cap, same as
+  Statistics).
+- `PUT /api/resource-snapshots/[date]` — create-or-replace that date's
+  snapshot; response includes the record + its comparison.
+- `DELETE /api/resource-snapshots/[date]`.
+
+DTOs/serializers: `src/lib/api/resource-snapshot-dto.ts` (mirrors
+`calendar-dto.ts`'s framework-free, structural-input pattern).
+
+UI (`src/features/resource-snapshots/`): `BalanceCard` ("Баланс ресурсов
+сегодня", placed on Home — chosen over Calendar since it's a
+profile-level fact, not calendar-specific — with "Обновить баланс" and a
+link into `HistoryDialog`/"История баланса"), `SnapshotForm` (prefilled
+from the latest known value per currency; a blank field is omitted from
+the save, never sent as 0), `SnapshotComparisonResult` (the after-save
+"Изменение с <date>" card, "Прошло N дней" using correct Russian
+pluralization), `HistoryList` (chronological, newest-first, no chart —
+a compact list was judged sufficient for this first version per the
+spec's own guidance).
+
+Calendar (`src/features/calendar/calendar-page.tsx`) gained a compact
+action row (shown once the onboarding empty state is past, so it doesn't
+clutter first-run) with three distinctly labelled actions plus one
+sentence distinguishing them: **"+ Добавить источник"** (existing,
+recurring), **"+ Добавить сумму"** (new — opens `QuickAmountFormDialog`,
+a "Получено"/"Потрачено" simplified variant of the existing
+`TransactionForm`/`CalendarTransaction` flow; no new backend, no PULL/
+banner-family fields, since this entry point is for a quick amount, not a
+gacha pull record), and **"Обновить баланс"** (new — opens the same
+`SnapshotFormDialog` the Home card uses). The explanatory sentence: "Источники
+и суммы планируют поступления. Баланс фиксирует, сколько ресурсов у вас
+фактически сейчас."
+
+### 11.6 Known, accepted simplification
+
+The balance-update form's client-side optimistic-concurrency guess
+(`isSameDate ? latest.version : 0` in `BalanceCard`/`calendar-page.tsx`)
+is only correct for the two common paths: saving today's snapshot (create
+or update-in-place against the already-fetched "latest"), and editing via
+"История баланса" (which always carries the exact version of the record
+being edited). If a user manually changes the form's date field to an
+arbitrary **past date that isn't today and isn't the current latest, but
+already has its own saved snapshot**, the client wrongly guesses
+`expectedVersion: 0` and the server correctly rejects it as a version
+conflict (`STALE_STATE`) rather than silently overwriting — no data is
+ever corrupted — but the visible message ("баланс за эту дату уже
+изменился в другом месте") doesn't name the *right* fix (open History and
+edit from there) as precisely as it could. This mirrors the already-
+accepted, already-documented calendar-form error-surfacing gap (Section 5)
+rather than introducing a new class of problem, and the correct
+workaround (backfill/correct via "История баланса → Изменить", which has
+no such gap) is one tap away.
+
+### 11.7 Tests added
+
+97 new tests (971 → 1068): pure comparison math
+(`resource-snapshot-math/comparison.test.ts`, 12, including non-
+consecutive-date gap math), service-layer tests mocking the repository/
+Prisma exactly like every other service test in this codebase
+(`resource-snapshot-service.test.ts`, 20 — idempotency, concurrency,
+atomic-balance-sync ordering, and the explicit edit/delete
+recalculation-on-next-read cases), API route tests mocking the service
+(`resource-snapshots/latest/route.test.ts`, `resource-snapshots/route.test.ts`,
+`resource-snapshots/[date]/route.test.ts` — auth, canonical LocalDate
+serialization, validation, STALE_STATE/NOT_FOUND/IDEMPOTENCY_KEY_REUSED
+mapping), and UI tests across `SnapshotForm`, `ComparisonRow`,
+`SnapshotComparisonResult`, `BalanceCard`, `HistoryList`,
+`QuickAmountForm`, plus `CalendarPage`/`HomePage` integration cases (the
+three distinct actions, prefill, after-save comparison, first-snapshot
+state, 44px touch targets, no fixed-pixel widths).
+
+**Deliberately not added**: a database-level integration test suite
+hitting a real Postgres instance for repository behaviors (same-date
+upsert, the unique constraint, atomic balance sync). This codebase has
+never had repository-level tests anywhere — every existing service test
+mocks the repository/`prisma.$transaction` exactly as this stage's tests
+do — so adding a real-DB-dependent test file here would be the first of
+its kind and would make `npm run test` newly require a live database
+connection to pass, which no other test in the suite needs today.
+Repository-level DB behavior (the unique constraint, atomicity, user
+isolation) was instead verified via the real migration-apply pass
+(Section 11.1) and a live manual walkthrough against the actual local
+Postgres database (Section 11.8), consistent with how Stage 7's own
+production-readiness pass verified DB behavior live rather than via
+automated integration tests.
+
+### 11.8 Files changed
+
+New: `prisma/migrations/20260725155114_add_resource_snapshots/`,
+`src/lib/resource-snapshot-math/{types,comparison}.ts` (+test),
+`src/lib/api/resource-snapshot-dto.ts`,
+`src/lib/validation/resource-snapshot.ts`,
+`src/server/repositories/resource-snapshot-repository.ts`,
+`src/server/services/resource-snapshot-service.ts` (+test),
+`src/app/api/resource-snapshots/{latest/route,route,[date]/route}.ts` (+tests),
+`src/features/resource-snapshots/*` (api, query-cache, mutation-state,
+use-resource-snapshot-queries, use-snapshot-mutations, labels,
+comparison-row, comparison-result, snapshot-form, snapshot-form-dialog,
+balance-card, history-list, history-dialog — all with matching test
+files where noted in 11.7), `src/features/calendar/quick-amount-form.tsx`,
+`src/features/calendar/quick-amount-form-dialog.tsx` (+test).
+Modified: `prisma/schema.prisma` (new models + `User` relation),
+`src/lib/query/use-query.ts` (unrelated to this stage's data model but
+touched to add the optional `enabled` gate `CalendarPage` now also uses
+for the new snapshot query, matching the existing calculator/calendar
+auth-race fix pattern), `src/features/calendar/calendar-page.tsx` (action
+row, three new modal kinds), `src/app/page.tsx` (renders `BalanceCard`,
+removed the stale Stage-2-era placeholder paragraph claiming the
+calculator/calendar/statistics tabs "will appear on future stages" — they
+have existed since Stage 3/5/6), `src/features/calendar/mobile-interactions.test.tsx`
+(added `QuickAmountForm` touch-target coverage), plus test-file updates
+wherever a `CalendarPage`/`HomePage` test needed a mock for the new
+`@/features/resource-snapshots/api` module.

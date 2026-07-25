@@ -109,6 +109,7 @@ model User {
 
   settings             UserSettings?
   resourceBalance      ResourceBalance?
+  resourceSnapshots    ResourceSnapshot[]
   bannerStates         BannerState[]
   calendarEntries      CalendarEntry[]
   calendarTransactions CalendarTransaction[]
@@ -180,6 +181,65 @@ model ResourceBalance {
   updatedAt           DateTime @updatedAt
 
   @@map("resource_balances")
+}
+
+/// An immutable, dated observation of the user's actual in-game resource
+/// totals — "what I actually saw in the game on this day", as opposed to
+/// ResourceBalance (the current, single-row cache the Calculator's "saved
+/// data" reads) or CalendarTransaction (planned/recorded income-expense
+/// activity). One logical snapshot per (user, localDate): saving again for
+/// a date that already has one REPLACES that day's snapshot in place
+/// (@@unique below), it never creates a duplicate; other dates' snapshots
+/// are never touched by that write. See resource-snapshot-service.ts for
+/// how this relates to and atomically keeps ResourceBalance in sync.
+model ResourceSnapshot {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Calendar day this snapshot is filed under (no time component) — the
+  /// day the user says these totals were true for, not necessarily the
+  /// same as `capturedAt`'s calendar day if saved late at night near a
+  /// timezone boundary.
+  localDate DateTime @db.Date
+  /// The real instant this snapshot was saved/replaced.
+  capturedAt DateTime @default(now())
+  /// Frozen at write time, like CalendarEntry/CalendarTransaction — a
+  /// later profile timezone change must never retroactively reassign which
+  /// calendar day an already-saved snapshot belongs to.
+  timezone String
+  note     String?
+
+  /// Optimistic-concurrency counter — see ResourceBalance.version.
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items ResourceSnapshotItem[]
+
+  @@unique([userId, localDate])
+  @@index([userId])
+  @@map("resource_snapshots")
+}
+
+/// One currency's observed amount within a ResourceSnapshot. Split into its
+/// own row per currency (rather than fixed columns like ResourceBalance)
+/// so a snapshot can legitimately omit a currency the user didn't re-enter
+/// that day — omitted is a distinct, preserved state, never coerced to 0.
+model ResourceSnapshotItem {
+  id         String           @id @default(uuid()) @db.Uuid
+  snapshotId String           @db.Uuid
+  snapshot   ResourceSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  currencyType CurrencyType
+  /// An observed total balance — always a non-negative magnitude, never a
+  /// delta (deltas are always computed on read, never stored — see
+  /// lib/resource-snapshot-math/comparison.ts).
+  amount Int
+
+  @@unique([snapshotId, currencyType])
+  @@map("resource_snapshot_items")
 }
 
 model BannerState {

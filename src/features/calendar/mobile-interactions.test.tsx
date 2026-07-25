@@ -12,6 +12,7 @@ import { ConfirmDialog } from "./confirm-dialog";
 import { EditScopeDialog } from "./edit-scope-dialog";
 import { SeriesForm } from "./series-form";
 import { TransactionForm } from "./transaction-form";
+import { QuickAmountForm } from "./quick-amount-form";
 import { DayCell } from "./day-cell";
 import { MonthNavigation } from "./month-navigation";
 
@@ -128,6 +129,25 @@ describe("Mobile interaction — touch target sizing", () => {
     for (const radio of screen.getAllByRole("radio")) {
       expectMinTouchTarget(radio);
     }
+    for (const button of screen.getAllByRole("button", { name: /отмена|сохранить/i })) {
+      expectMinTouchTarget(button);
+    }
+  });
+
+  it("QuickAmountForm's direction toggle, amount field, and Cancel/Save buttons meet the 44px minimum", () => {
+    render(
+      <QuickAmountForm
+        date={{ year: 2026, month: 1, day: 15 }}
+        timezone="UTC"
+        submitting={false}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    for (const radio of screen.getAllByRole("radio")) {
+      expectMinTouchTarget(radio);
+    }
+    expectMinTouchTarget(screen.getByLabelText("Количество"));
     for (const button of screen.getAllByRole("button", { name: /отмена|сохранить/i })) {
       expectMinTouchTarget(button);
     }

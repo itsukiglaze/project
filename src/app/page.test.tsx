@@ -15,6 +15,12 @@ vi.mock("@/components/providers/auth-provider", async () => {
 vi.mock("@/components/auth/telegram-login-widget", () => ({
   TelegramLoginWidget: () => <div data-testid="login-widget" />,
 }));
+vi.mock("@/features/resource-snapshots/api", () => ({
+  fetchLatestSnapshot: () => Promise.resolve({ status: "success", data: { snapshot: null } }),
+  fetchSnapshotHistory: () => Promise.resolve({ status: "success", data: { snapshots: [] } }),
+  saveSnapshot: vi.fn(),
+  deleteSnapshot: vi.fn(),
+}));
 
 import HomePage from "./page";
 
@@ -98,5 +104,16 @@ describe("HomePage — error states", () => {
     );
     render(<HomePage />);
     expect(screen.getByText("Anya")).toBeInTheDocument();
+  });
+
+  it("renders the resource-balance card for an authenticated user", async () => {
+    mockUseAuth.mockReturnValue(
+      authValue({
+        status: "authenticated",
+        user: { id: "u1", firstName: "Anya", username: null, timezone: "Europe/Berlin" },
+      }),
+    );
+    render(<HomePage />);
+    expect(await screen.findByRole("heading", { name: "Баланс ресурсов сегодня" })).toBeInTheDocument();
   });
 });

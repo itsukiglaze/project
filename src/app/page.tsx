@@ -2,6 +2,7 @@
 
 import { useAuth, type AuthFailureCategory } from "@/components/providers/auth-provider";
 import { TelegramLoginWidget } from "@/components/auth/telegram-login-widget";
+import { BalanceCard } from "@/features/resource-snapshots/balance-card";
 
 const ERROR_MESSAGES: Record<string, string> = {
   SIGNATURE_MISMATCH: "Не удалось подтвердить подлинность запуска из Telegram.",
@@ -106,16 +107,11 @@ export default function HomePage() {
         </div>
       </header>
 
+      <BalanceCard />
+
       <section className="rounded-2xl border border-border bg-surface p-4">
         <p className="text-xs uppercase tracking-wide text-muted">Часовой пояс</p>
         <p className="mt-1 text-lg font-semibold">{user?.timezone}</p>
-      </section>
-
-      <section className="rounded-2xl border border-border bg-surface p-4">
-        <p className="text-sm text-muted">
-          Аккаунт создан и данные будут сохраняться между входами. Калькулятор круток,
-          календарь и статистика появятся на следующих этапах.
-        </p>
       </section>
     </div>
   );

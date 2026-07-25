@@ -22,6 +22,14 @@ const mockCreateTransaction = vi.fn();
 const mockUpdateTransaction = vi.fn();
 const mockDeleteTransaction = vi.fn();
 const mockUpsertException = vi.fn();
+const mockFetchLatestSnapshot = vi.fn();
+
+vi.mock("@/features/resource-snapshots/api", () => ({
+  fetchLatestSnapshot: (...args: unknown[]) => mockFetchLatestSnapshot(...args),
+  fetchSnapshotHistory: vi.fn(),
+  saveSnapshot: vi.fn(),
+  deleteSnapshot: vi.fn(),
+}));
 
 vi.mock("./api", () => ({
   fetchSeriesList: (...args: unknown[]) => mockFetchSeriesList(...args),
@@ -114,6 +122,7 @@ function setupSuccessfulQueries() {
       projectedEndingBalance: 0,
     },
   });
+  mockFetchLatestSnapshot.mockResolvedValue({ status: "success", data: { snapshot: null } });
 }
 
 /**
@@ -131,7 +140,8 @@ describe("Calendar modal dialogs — systematic accessibility pass", () => {
 
   it("create-series dialog: accessible, traps focus, Escape returns focus to its trigger", async () => {
     render(<CalendarPage />);
-    const trigger = await screen.findByRole("button", { name: /\+ добавить источник/i });
+    const triggers = await screen.findAllByRole("button", { name: /\+ добавить источник/i });
+    const trigger = triggers[0];
     await userEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog", { name: "Серия" });

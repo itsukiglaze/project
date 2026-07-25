@@ -22,6 +22,15 @@ const mockCreateTransaction = vi.fn();
 const mockUpdateTransaction = vi.fn();
 const mockDeleteTransaction = vi.fn();
 const mockUpsertException = vi.fn();
+const mockFetchLatestSnapshot = vi.fn();
+const mockSaveSnapshot = vi.fn();
+
+vi.mock("@/features/resource-snapshots/api", () => ({
+  fetchLatestSnapshot: (...args: unknown[]) => mockFetchLatestSnapshot(...args),
+  fetchSnapshotHistory: vi.fn(),
+  saveSnapshot: (...args: unknown[]) => mockSaveSnapshot(...args),
+  deleteSnapshot: vi.fn(),
+}));
 
 vi.mock("./api", () => ({
   fetchSeriesList: (...args: unknown[]) => mockFetchSeriesList(...args),
@@ -114,6 +123,7 @@ function setupSuccessfulQueries() {
       projectedEndingBalance: 0,
     },
   });
+  mockFetchLatestSnapshot.mockResolvedValue({ status: "success", data: { snapshot: null } });
 }
 
 /** Renders CalendarPage and drives the UI up to the split-series form being open. */
@@ -314,5 +324,97 @@ describe("CalendarPage — purpose, onboarding, and selected-date wiring", () =>
     await userEvent.click(screen.getByRole("button", { name: "Закрыть" }));
 
     expect(screen.getByText("На эту дату поступлений нет.")).toBeInTheDocument();
+  });
+});
+
+describe("CalendarPage — three distinct actions (source / one-time amount / balance)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupSuccessfulQueries();
+  });
+
+  it("exposes three distinctly labelled actions plus an explanation of the difference", async () => {
+    render(<CalendarPage />);
+    await screen.findByRole("heading", { name: "Регулярные источники" });
+
+    expect(screen.getByRole("button", { name: "+ Добавить сумму" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Обновить баланс" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/источники и суммы планируют поступления/i),
+    ).toBeInTheDocument();
+  });
+
+  it("'+ Добавить сумму' opens a one-time transaction form, distinct from the series form", async () => {
+    render(<CalendarPage />);
+    await screen.findByRole("heading", { name: "Регулярные источники" });
+
+    await userEvent.click(screen.getByRole("button", { name: "+ Добавить сумму" }));
+
+    expect(await screen.findByRole("dialog", { name: "Добавить сумму" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Получено" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Серия" })).not.toBeInTheDocument();
+  });
+
+  it("'Обновить баланс' opens the balance snapshot form, prefilled from the latest saved snapshot", async () => {
+    mockFetchLatestSnapshot.mockResolvedValue({
+      status: "success",
+      data: {
+        snapshot: {
+          record: {
+            id: "snap-1",
+            localDate: "2026-01-10",
+            capturedAt: "2026-01-10T09:00:00.000Z",
+            timezone: "UTC",
+            note: null,
+            items: [{ currencyType: CurrencyType.POLYCHROME, amount: 5000 }],
+            version: 1,
+          },
+          comparison: [],
+          previousLocalDate: null,
+        },
+      },
+    });
+
+    render(<CalendarPage />);
+    await screen.findByRole("heading", { name: "Регулярные источники" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Обновить баланс" }));
+
+    expect(await screen.findByRole("dialog", { name: "Обновить баланс" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Полихромы")).toHaveValue("5000");
+  });
+
+  it("saving the balance shows the after-save comparison on the calendar page", async () => {
+    mockFetchLatestSnapshot.mockResolvedValue({ status: "success", data: { snapshot: null } });
+    mockSaveSnapshot.mockResolvedValue({
+      status: "success",
+      data: {
+        ok: true,
+        snapshot: {
+          record: {
+            id: "snap-1",
+            localDate: "2026-01-15",
+            capturedAt: "2026-01-15T09:00:00.000Z",
+            timezone: "UTC",
+            note: null,
+            items: [{ currencyType: CurrencyType.POLYCHROME, amount: 300 }],
+            version: 1,
+          },
+          comparison: [{ currencyType: CurrencyType.POLYCHROME, current: 300, status: "no_previous_snapshot" }],
+          previousLocalDate: null,
+        },
+        replay: false,
+      },
+    });
+
+    render(<CalendarPage />);
+    await screen.findByRole("heading", { name: "Регулярные источники" });
+    await userEvent.click(screen.getByRole("button", { name: "Обновить баланс" }));
+    await screen.findByRole("dialog", { name: "Обновить баланс" });
+
+    await userEvent.type(screen.getByLabelText("Полихромы"), "300");
+    await userEvent.click(screen.getByRole("button", { name: /сохранить/i }));
+
+    expect(await screen.findByRole("heading", { name: "Первое сохранение" })).toBeInTheDocument();
   });
 });
