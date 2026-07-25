@@ -64,3 +64,19 @@ body {
 html {
   overflow-x: hidden;
 }
+
+/* Onboarding tutorial's spotlight ring pulse — never applied when the user
+   prefers reduced motion (see spotlight-mask.tsx), per accessibility spec. */
+@keyframes onboarding-spotlight-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 196, 0, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(245, 196, 0, 0);
+  }
+}
+
+.animate-onboarding-pulse {
+  animation: onboarding-spotlight-pulse 2s ease-in-out infinite;
+}

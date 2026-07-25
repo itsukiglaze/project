@@ -53,3 +53,27 @@ export async function upsertUserFromTelegram(input: UpsertUserInput) {
 export async function findUserById(userId: string) {
   return prisma.user.findUnique({ where: { id: userId } });
 }
+
+export type OnboardingOutcome = "COMPLETED" | "SKIPPED";
+
+/**
+ * Records the outcome of the user's latest onboarding attempt. Always a
+ * plain last-write-wins update — no optimistic-concurrency version check,
+ * unlike the resource-balance/banner-state/calendar write paths. This is
+ * deliberate: onboarding status is a single-user-controlled preference
+ * with no concurrent-editing risk (nothing else ever writes it, and
+ * repeating the same request is already idempotent by construction —
+ * setting the same version/outcome twice is a no-op either way), so the
+ * full expectedVersion+idempotencyKey ceremony used elsewhere in this
+ * codebase would be pure overhead here, not a real safety improvement.
+ */
+export async function updateOnboardingStatus(
+  userId: string,
+  version: number,
+  outcome: OnboardingOutcome,
+) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { onboardingVersion: version, onboardingOutcome: outcome, onboardingUpdatedAt: new Date() },
+  });
+}

@@ -17,7 +17,7 @@ export function BannerFamilySelector({
   const selected = getFamilyDisplayInfo(activeFamily);
 
   return (
-    <StepSection step={1} title="Выберите тип баннера">
+    <StepSection step={1} title="Выберите тип баннера" onboardingTarget="banner-selector">
       <div className="grid grid-cols-2 gap-2">
         {ALL_FAMILIES.map((family) => {
           const info = getFamilyDisplayInfo(family);

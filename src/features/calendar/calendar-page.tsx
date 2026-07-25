@@ -22,6 +22,7 @@ import { SelectedDatePanel } from "./selected-date-panel";
 import { QuickAmountFormDialog } from "./quick-amount-form-dialog";
 import { useFocusTrap } from "./use-focus-trap";
 import { getTodayLocalDate } from "./local-date-client";
+import { onboardingTargetAttr } from "@/components/onboarding/target-attach";
 import { summarizeOccurrencesByDay } from "./day-summary";
 import {
   addMonthsToYearMonth,
@@ -146,7 +147,10 @@ export function CalendarPage() {
       )}
 
       {!showOnboarding && (
-        <section className="space-y-2 rounded-2xl border border-border bg-surface p-4">
+        <section
+          className="space-y-2 rounded-2xl border border-border bg-surface p-4"
+          {...onboardingTargetAttr("calendar-actions")}
+        >
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

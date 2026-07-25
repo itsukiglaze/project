@@ -4,6 +4,8 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { BottomNav } from "@/components/navigation/bottom-nav";
+import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
+import { OnboardingOverlay } from "@/components/onboarding/onboarding-overlay";
 
 export const metadata: Metadata = {
   title: "Proxy Pull Planner",
@@ -37,8 +39,11 @@ export default function RootLayout({
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
         <ThemeProvider>
           <AuthProvider>
-            <main className="mx-auto w-full max-w-lg flex-1 pb-24">{children}</main>
-            <BottomNav />
+            <OnboardingProvider>
+              <main className="mx-auto w-full max-w-lg flex-1 pb-24">{children}</main>
+              <BottomNav />
+              <OnboardingOverlay />
+            </OnboardingProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

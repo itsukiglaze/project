@@ -18,6 +18,9 @@ export interface CurrentUser {
   lastName: string | null;
   photoUrl: string | null;
   timezone: string;
+  /** `null` means the user has never completed or skipped any onboarding version yet. */
+  onboardingVersion: number | null;
+  onboardingOutcome: "COMPLETED" | "SKIPPED" | null;
 }
 
 type AuthStatus = "loading" | "authenticated" | "error";

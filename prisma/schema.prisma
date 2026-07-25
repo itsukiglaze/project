@@ -84,6 +84,15 @@ enum RecurrenceEndType {
   AFTER_COUNT
 }
 
+/// How the user's most recent interactive onboarding attempt ended.
+/// Deliberately just "the latest outcome", not a full history table — the
+/// product only ever needs "should we auto-show onboarding again", which
+/// is fully answered by (onboardingVersion, onboardingOutcome) alone.
+enum OnboardingOutcome {
+  COMPLETED
+  SKIPPED
+}
+
 // ---------------------------------------------------------------------------
 // Core identity & auth
 // ---------------------------------------------------------------------------
@@ -102,6 +111,14 @@ model User {
   /// it is read client-side via Intl.DateTimeFormat().resolvedOptions().timeZone
   /// and validated server-side. "UTC" is only a fallback.
   timezone     String  @default("UTC")
+
+  /// The onboarding tutorial version the user last completed or skipped —
+  /// NULL means "never seen any version yet" (a genuine first-time user).
+  /// Compared against CURRENT_ONBOARDING_VERSION (src/lib/onboarding) to
+  /// decide whether to auto-show the tutorial again after a version bump.
+  onboardingVersion   Int?
+  onboardingOutcome   OnboardingOutcome?
+  onboardingUpdatedAt DateTime?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

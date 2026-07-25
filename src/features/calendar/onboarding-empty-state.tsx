@@ -1,5 +1,7 @@
 "use client";
 
+import { onboardingTargetAttr } from "@/components/onboarding/target-attach";
+
 export function OnboardingEmptyState({
   onAddSource,
   onAddOneTime,
@@ -8,7 +10,10 @@ export function OnboardingEmptyState({
   onAddOneTime: () => void;
 }) {
   return (
-    <section className="space-y-3 rounded-2xl border border-accent-yellow/50 bg-accent-yellow/10 p-4">
+    <section
+      className="space-y-3 rounded-2xl border border-accent-yellow/50 bg-accent-yellow/10 p-4"
+      {...onboardingTargetAttr("calendar-actions")}
+    >
       <div>
         <h2 className="text-sm font-bold">Начните с источника дохода</h2>
         <p className="mt-1 text-xs text-muted">

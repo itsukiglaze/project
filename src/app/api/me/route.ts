@@ -19,5 +19,7 @@ export async function GET() {
     lastName: user.lastName,
     photoUrl: user.photoUrl,
     timezone: user.timezone,
+    onboardingVersion: user.onboardingVersion,
+    onboardingOutcome: user.onboardingOutcome,
   });
 }

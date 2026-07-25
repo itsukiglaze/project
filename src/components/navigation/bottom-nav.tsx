@@ -4,14 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Calculator, CalendarDays, BarChart3, Settings } from "lucide-react";
 import { triggerHapticImpact } from "@/lib/telegram/webapp";
+import { onboardingTargetAttr } from "@/components/onboarding/target-attach";
+import type { OnboardingTargetId } from "@/lib/onboarding/targets";
 
-const TABS = [
+const TABS: ReadonlyArray<{
+  href: string;
+  label: string;
+  Icon: typeof Home;
+  onboardingTarget?: OnboardingTargetId;
+}> = [
   { href: "/", label: "Главная", Icon: Home },
-  { href: "/calculator", label: "Калькулятор", Icon: Calculator },
-  { href: "/calendar", label: "Календарь", Icon: CalendarDays },
-  { href: "/statistics", label: "Статистика", Icon: BarChart3 },
-  { href: "/settings", label: "Настройки", Icon: Settings },
-] as const;
+  { href: "/calculator", label: "Калькулятор", Icon: Calculator, onboardingTarget: "calculator-tab" },
+  { href: "/calendar", label: "Календарь", Icon: CalendarDays, onboardingTarget: "calendar-tab" },
+  { href: "/statistics", label: "Статистика", Icon: BarChart3, onboardingTarget: "statistics-tab" },
+  { href: "/settings", label: "Настройки", Icon: Settings, onboardingTarget: "settings-tab" },
+];
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -28,7 +35,7 @@ export function BottomNav() {
       aria-label="Основная навигация"
     >
       <ul className="mx-auto flex max-w-lg items-stretch justify-between px-1">
-        {TABS.map(({ href, label, Icon }) => {
+        {TABS.map(({ href, label, Icon, onboardingTarget }) => {
           const isActive = pathname === href;
           return (
             <li key={href} className="flex-1">
@@ -37,6 +44,7 @@ export function BottomNav() {
                 onClick={() => triggerHapticImpact("light")}
                 className="flex min-h-14 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition-colors"
                 aria-current={isActive ? "page" : undefined}
+                {...(onboardingTarget ? onboardingTargetAttr(onboardingTarget) : {})}
               >
                 <span
                   className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${

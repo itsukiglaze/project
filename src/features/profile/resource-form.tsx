@@ -4,6 +4,7 @@ import { NumericField } from "@/features/calculator/numeric-field";
 import { DiffPreview } from "./diff-preview";
 import { useResourceForm } from "./use-resource-form";
 import type { ResourceSnapshot } from "./api";
+import { onboardingTargetAttr } from "@/components/onboarding/target-attach";
 
 const LABELS: Record<keyof ResourceSnapshot, string> = {
   polychrome: "Полихромы",
@@ -102,6 +103,7 @@ export function ResourceForm() {
           onClick={openPreview}
           disabled={!canOpenPreview}
           className="min-h-11 w-full rounded-xl bg-accent-yellow text-sm font-bold text-black disabled:opacity-40"
+          {...onboardingTargetAttr("resource-balance")}
         >
           Просмотреть изменения
         </button>
