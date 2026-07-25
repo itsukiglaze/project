@@ -5,6 +5,13 @@ import { z } from "zod";
  *
  * `initData` is the raw, still-signed string from
  * `window.Telegram.WebApp.initData` — verified server-side before use.
+ * Deliberately NOT `.min(1)`: `getRawInitData()` (src/lib/telegram/webapp.ts)
+ * returns `""` whenever the app isn't running inside Telegram, and that
+ * empty string is exactly what routes a request to the dev-auth fallback
+ * (or a clean MISSING_INIT_DATA/401 in production) in
+ * `resolveTelegramUser` (auth-service.ts). Rejecting it here with a generic
+ * 400 would make the documented dev-auth bypass unreachable through the
+ * real endpoint.
  *
  * `timezone` is read client-side via
  * `Intl.DateTimeFormat().resolvedOptions().timeZone` (Telegram does not
@@ -14,7 +21,7 @@ import { z } from "zod";
  */
 export const telegramAuthRequestSchema = z
   .object({
-    initData: z.string().min(1).max(8192),
+    initData: z.string().max(8192),
     timezone: z.string().min(1).max(100).optional(),
   })
   .strict();

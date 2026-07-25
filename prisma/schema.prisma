@@ -399,6 +399,12 @@ model CalendarTransaction {
   @@index([bannerFamily])
   @@index([createdAt])
   @@index([seriesId])
+  /// Covers the actual hot read path (listActualOccurrencesInRange, called
+  /// by every calendar month view, forecast, and statistics load): always
+  /// filters on exactly {userId, localDate: {gte, lte}}. The separate
+  /// single-column @@index([userId]) above still exists for the few
+  /// userId-only lookups; this composite one is additive, not a replacement.
+  @@index([userId, localDate])
   @@map("calendar_transactions")
 }
 

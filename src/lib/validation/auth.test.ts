@@ -20,6 +20,11 @@ describe("telegramAuthRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts an empty initData string — this is what a client outside Telegram legitimately sends (getRawInitData()), and it must reach resolveTelegramUser's dev-auth/MISSING_INIT_DATA branch, not be rejected here", () => {
+    const result = telegramAuthRequestSchema.safeParse({ initData: "", timezone: "UTC" });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects a request that tries to smuggle a userId/telegramId field", () => {
     const result = telegramAuthRequestSchema.safeParse({
       initData: "auth_date=1&hash=abc",

@@ -3,14 +3,20 @@
 Telegram Mini App для игроков Zenless Zone Zero: калькулятор круток, календарь
 доходов, статистика накоплений и цели с прогнозом.
 
-**Статус:** Stage 6 завершён и проверен (авторизация, калькулятор,
-календарь с повторяющимися сериями/исключениями/split-флоу, статистика с
-балансами/pity/итогами/трендами), включая Stage 6E — аудит и исправление
-сериализации `LocalDate` на границе API (единый модуль
-`src/lib/api/calendar-dto.ts`, канонический wire-формат "YYYY-MM-DD").
-Цели (`Goal`) и история отдельных круток (`PullEvent`) — неактивные
-модели схемы, ещё не реализованы. Подробная история этапов и известные
-ограничения — в `DEVELOPMENT_STATUS.md` (авторитетный источник,
+**Статус:** Stage 7 (Production Readiness) завершён и проверен — проект
+готов к деплою как реальный Telegram Mini App. Включает все предыдущие
+этапы (авторизация, калькулятор, календарь с повторяющимися
+сериями/исключениями/split-флоу, статистика с балансами/pity/итогами/
+трендами, Stage 6E — канонический wire-формат `LocalDate`), плюс: первую
+реальную Prisma-миграцию (`prisma/migrations/`), исправленный баг входа
+вне Telegram (dev-auth был недостижим из-за Zod-схемы), валидацию
+переменных окружения при старте (`src/instrumentation.ts`), Docker- и
+Vercel-конфигурацию деплоя, эндпоинт обслуживания `/api/internal/maintenance`,
+и полный live end-to-end прогон всех сценариев против реальной БД. Полный
+отчёт, чеклист деплоя и настройка BotFather — `DEVELOPMENT_STATUS.md`,
+раздел 9. Цели (`Goal`) и история отдельных круток (`PullEvent`) —
+неактивные модели схемы, ещё не реализованы. Подробная история этапов и
+известные ограничения — в `DEVELOPMENT_STATUS.md` (авторитетный источник,
 синхронизируйте с ним при расхождениях).
 
 ## Стек
@@ -27,9 +33,12 @@ Telegram Mini App для игроков Zenless Zone Zero: калькулято�
 npm install
 cp .env.example .env        # заполните значения, см. ниже
 npx prisma generate         # генерирует src/generated/prisma — требует сеть
-npx prisma migrate dev      # применяет миграции к DATABASE_URL
+npx prisma migrate deploy   # применяет существующие prisma/migrations/ к DATABASE_URL
 npm run dev
 ```
+
+Для продакшн-деплоя (Vercel или Docker/VPS), полного чеклиста переменных
+окружения и настройки BotFather — см. `DEVELOPMENT_STATUS.md`, раздел 9.
 
 ## Переменные окружения
 
@@ -43,6 +52,7 @@ npm run dev
 | `SESSION_SECRET` | Зарезервировано, сейчас не используется (токены сессий — случайные, см. ниже) |
 | `NEXT_PUBLIC_APP_URL` | Публичный URL задеплоенного Mini App |
 | `DEV_AUTH_ENABLED` / `DEV_TELEGRAM_USER_ID` | Dev-режим авторизации вне Telegram, см. `src/lib/auth/dev-auth.ts` |
+| `CRON_SECRET` | Bearer-секрет для `GET /api/internal/maintenance` (очистка истёкших сессий/idempotency-записей). Не задан — эндпоинт всегда отвечает 503 |
 
 ## Авторизация и сессии
 
@@ -105,7 +115,6 @@ src/
   components/
     navigation/         # нижняя навигация
     providers/           # ThemeProvider, AuthProvider
-    ui/                  # общие UI-примитивы
   config/               # gacha.ts — константы баннеров
   features/
     calculator/         # UI калькулятора круток
@@ -127,6 +136,18 @@ src/
     services/            # бизнес-оркестрация (auth, calculator, calendar, banner-state, resource, statistics)
     local-date.ts         # "сегодня" в часовом поясе пользователя (сервер)
   types/                 # окружающие типы (Telegram WebApp)
+  instrumentation.ts     # валидация обязательных env-переменных при старте сервера
 prisma/
   schema.prisma
+  migrations/            # реальные Prisma-миграции (Stage 7)
 ```
+
+## Деплой
+
+- `Dockerfile` + `.dockerignore` — self-hosted (VPS) деплой через Docker,
+  многоступенчатая сборка, standalone-вывод Next.js.
+- `vercel.json` — конфигурация Vercel, включая ежедневный Cron-job для
+  `/api/internal/maintenance`.
+- Полная пошаговая инструкция (Vercel и Docker/VPS), рекомендуемые
+  production-настройки и чеклист BotFather/Mini App — `DEVELOPMENT_STATUS.md`,
+  раздел 9.

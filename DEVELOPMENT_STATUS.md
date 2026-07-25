@@ -1,8 +1,8 @@
 # DEVELOPMENT_STATUS.md — Proxy Pull Planner
 
-Snapshot as of the post-Stage-6 LocalDate serialization audit and fix,
-fully verified. This document is the authoritative "where things stand"
-reference for continuing this project in Claude Code.
+Snapshot as of Stage 7 (Production Readiness), fully verified. This
+document is the authoritative "where things stand" reference for
+continuing this project in Claude Code.
 
 ---
 
@@ -23,8 +23,13 @@ reference for continuing this project in Claude Code.
 | **6C** | Statistics UI: resource balance (per-currency), banner pity/guarantee summary, actual/scheduled/expected totals, continuous actual-to-projected trajectory chart, transaction trends, date-range picker, chart/table toggles | Done |
 | **6D** | Full-repo verification (706/706 tests, lint, typecheck, build) | Done |
 | **6E** | LocalDate wire-serialization audit and fix (the Section 5/item-19 flagged gap): centralized `src/lib/api/calendar-dto.ts` DTO/serializer module; every calendar route now explicitly serializes `LocalDate` fields to "YYYY-MM-DD" before `NextResponse.json()`; widened `merge.ts`'s `ActualOccurrence` (id/source/bannerFamily/note/version) so a displayed one-time transaction returned via `/api/calendar/occurrences` is actually editable/deletable (statistics-service.ts's separate `listActualOccurrencesInRange` read was left as-is — see Section 5, still a deliberate tradeoff, not something this fix removed) | Done |
+| **7** | Production readiness: first real Prisma migration (this project had never been migrated before — see Section 9), a real Telegram-login bug found and fixed (empty `initData` was rejected by Zod before ever reaching the dev-auth fallback, making local dev outside Telegram completely unreachable), startup env-var validation (`src/instrumentation.ts`), a scheduled housekeeping endpoint for the two purge routines that existed but were never wired up, Docker + Vercel deployment configs, baseline security headers, one composite DB index, and a full live end-to-end verification pass against a real Postgres database — see Section 9 for the complete writeup | Done |
 
 ## 2. Current stage
+
+**Stage 7: complete and fully verified.** The app is now deployable as a
+real production Telegram Mini App — see Section 9 for the full production
+readiness report, deployment checklist, and BotFather configuration steps.
 
 **Stage 6 (including 6E): complete and fully verified.** The Statistics tab
 (`src/app/statistics/page.tsx`) is a real feature now, not a stub — see
@@ -132,26 +137,28 @@ rather than oversight:
 
 ## 7. Assumptions
 
-- Deployment target is Vercel + Supabase Postgres, reachable via `DATABASE_URL` (pooled) + `DIRECT_URL` (direct, for migrations).
-- The Telegram bot integration (BotFather registration, Menu Button, domain wiring) was never actually performed — only the server-side `initData` HMAC verification code exists and is unit-tested against synthetic signed payloads. No real bot token has ever been used.
-- Local dev outside Telegram relies on `DEV_AUTH_ENABLED=true` + `DEV_TELEGRAM_USER_ID=<id>`, hard double-gated to `NODE_ENV=development`.
-- This project has still never been migrated against a *real* Postgres database — `DATABASE_URL`/`DIRECT_URL` in `.env` are placeholders wherever this was verified, sufficient for `prisma generate`/`typecheck`/`build` (which don't open a connection) but not for `prisma migrate dev` or actually running the app.
+- Deployment target is Vercel + Supabase Postgres, reachable via `DATABASE_URL` (pooled) + `DIRECT_URL` (direct, for migrations) — or a Docker/VPS deployment using the same two connection strings (see Section 9).
+- The Telegram bot integration (BotFather registration, Menu Button, domain wiring) has still never actually been performed against a real bot — only the server-side `initData` HMAC verification code exists, unit-tested against synthetic signed payloads AND (Stage 7) verified live end-to-end via the dev-auth path against a real Postgres database. No real `TELEGRAM_BOT_TOKEN` has ever been used. See Section 9's BotFather checklist for exactly what's left to go live for real.
+- Local dev outside Telegram relies on `DEV_AUTH_ENABLED=true` + `DEV_TELEGRAM_USER_ID=<id>`, hard double-gated to `NODE_ENV=development` — and, as of Stage 7, this path is now actually reachable (see Section 9, "Bugs fixed").
+- **This project HAS now been migrated against a real Postgres database** (Stage 7, a local instance, not Supabase specifically — see Section 9). `prisma/migrations/` is real and verified to apply cleanly to an empty database via `prisma migrate deploy`. The previous assumption here ("never migrated") is stale; do not reintroduce it.
 
 ## 8. Remaining roadmap
 
-**Stage 5D, Stage 6, and Stage 6E are all complete** — see Section 2. Nothing
-outstanding from any "finish properly" list remains.
+**Stage 5D, Stage 6, Stage 6E, and Stage 7 are all complete** — see Section
+2. Nothing outstanding from any "finish properly" list remains.
 
 **Stage 5E (not started):** scope not yet defined in this conversation.
 
-**Stage 7 (not started, explicitly out of scope so far):** anything needing real pull-by-pull history or goal tracking — requires building a `PullEvent`/`Goal` write path first (both are currently inactive schema models, see Section 5). Not yet scoped.
+**Stage 8 (not started, explicitly out of scope so far):** anything needing real pull-by-pull history or goal tracking — requires building a `PullEvent`/`Goal` write path first (both are currently inactive schema models, see Section 5). Not yet scoped. (Previously mislabeled "Stage 7" in this document before Stage 7 was claimed by the production-readiness pass — renumbered here, no work was done under the old label.)
 
 **No priority follow-up remains from Stage 6** — the `LocalDate` wire-serialization gap flagged there was verified and fixed in Stage 6E (Section 2, Section 4 items 19-20).
 
+**No priority follow-up remains from Stage 7** — see Section 9 for the full list of what was verified/fixed/documented. The only genuinely-open items are external, one-time, human actions that no code change can complete: real BotFather bot registration (Section 9 checklist) and provisioning a real production Postgres instance (Supabase or otherwise) to run `prisma migrate deploy` against.
+
 **Always-outstanding infra tasks:**
-- Run `npx prisma migrate dev --name init` against a real Supabase/Postgres `DATABASE_URL`/`DIRECT_URL` — this project's schema has never been migrated against a real database.
-- Wire `purgeStaleSessions()` and `purgeExpiredIdempotencyRecords()` to an actual schedule.
-- Real Telegram bot registration + Mini App domain/menu-button setup (BotFather).
+- Real Telegram bot registration + Mini App domain/menu-button setup (BotFather) — see Section 9 checklist.
+- Provision a real production Postgres database and run `npx prisma migrate deploy` against it (migrations themselves are done and verified — see Section 9 — this is just "point them at the real prod DB instead of the local one Stage 7 verified against").
+- Schedule `GET /api/internal/maintenance` (Section 9) — the code and docs are done; an operator still has to actually turn on the Vercel Cron / VPS crontab entry post-deploy.
 
 ### Exact commands to run, in order, on a normal machine
 
@@ -159,10 +166,126 @@ outstanding from any "finish properly" list remains.
 npm install
 cp .env.example .env        # fill in real DATABASE_URL/DIRECT_URL before migrating
 npx prisma generate         # generates src/generated/prisma — no DB connection needed
-npx prisma migrate dev --name init   # needs a real DATABASE_URL/DIRECT_URL
+npx prisma migrate deploy   # applies the existing prisma/migrations/ — needs a real DATABASE_URL/DIRECT_URL
 npm run lint
 npm run typecheck
 npm run test
 npm run build
 npm run dev
 ```
+
+`prisma migrate deploy` (not `migrate dev --name init`) is correct here now that
+`prisma/migrations/` is checked into the repo (Stage 7) — `migrate dev` is only
+for authoring a *new* migration from a schema change during development; a
+fresh clone should just apply the migrations that already exist.
+
+## 9. Stage 7 — Production Readiness
+
+Full audit + fixes across code, database, auth, environment, deployment,
+security, and performance, plus a live end-to-end verification pass
+against a real local Postgres database (dev-auth session -> resource edit
+-> calculator -> recurring series -> split -> occurrence override -> both
+occurrence-cancel and one-time-transaction delete -> forecast/statistics ->
+logout, plus idempotency replay/mismatch) — not just unit tests. No
+user-facing features were added.
+
+### 9.1 Bugs found and fixed
+
+1. **`initData` empty string rejected by Zod before reaching dev-auth (real, previously-undetected bug).** `telegramAuthRequestSchema` (`src/lib/validation/auth.ts`) required `initData` to be non-empty (`.min(1)`). `getRawInitData()` (`src/lib/telegram/webapp.ts`) returns `""` whenever the app isn't running inside Telegram — exactly the signal `resolveTelegramUser` (`auth-service.ts`) uses to route to the dev-auth fallback (or a clean `MISSING_INIT_DATA`/401 in production). The Zod schema rejected that empty string with a generic 400 before the request ever reached the service layer, meaning **the documented dev-auth bypass was completely unreachable through the real endpoint** — `npm run dev` outside Telegram could never actually log in. Found by attempting the Stage 7 live E2E verification itself (the first scenario, "first login", failed). Fixed by removing `.min(1)` (kept `.max(8192)` as the DoS guard); added a regression test (`auth.test.ts`) asserting an empty string is accepted. Verified live afterward: dev-auth login now works end-to-end against a real session/database.
+2. **No migrations existed anywhere in the repo.** `prisma/migrations/` did not exist — this was previously an open, explicitly-documented gap ("this project's schema has never been migrated against a real database"). Generated the real initial migration (`20260725074203_init`) by running `prisma migrate dev --name init` against a genuinely empty local Postgres 16 database, then verified `prisma migrate deploy` applies it cleanly to a second, independent empty database with zero manual intervention.
+3. **`prisma/schema.prisma`'s `CalendarTransaction` had no composite index covering its actual hot read path.** `listActualOccurrencesInRange` (called by every calendar view, every forecast, and every statistics load) filters on exactly `{userId, localDate: {gte, lte}}`, but only independent single-column `@@index([userId])` and `@@index([localDate])` existed. Added `@@index([userId, localDate])` (migration `20260725075446_add_calendar_transaction_user_localdate_index`), verified it applies cleanly on top of the init migration from an empty database.
+4. **`purgeStaleSessions()`/`purgeExpiredIdempotencyRecords()` existed but were never callable from anywhere.** Both were pure repository functions with zero call sites, flagged in this document since Stage 4B/5B as "not scheduled anywhere." Added `GET /api/internal/maintenance` (bearer-secret-protected via `CRON_SECRET`, 503s if the secret isn't configured — never falls open) that runs both and reports counts; wired a daily Vercel Cron entry (`vercel.json`) calling it. A VPS deployment schedules the same endpoint via crontab/systemd timer instead (see 9.4).
+5. **Dead code**: `src/components/ui/coming-soon.tsx` (`ComingSoon` component) had zero import sites anywhere — every page it was presumably a placeholder for (`calculator`, `calendar`, `statistics`) now renders its real Stage 3/5/6 feature component. Removed.
+6. **No startup validation of required environment variables.** A missing `DATABASE_URL` or (in production) `TELEGRAM_BOT_TOKEN` previously only surfaced as a 500 on whichever request happened to touch it first. Added `src/instrumentation.ts` (`register()`, runs once when a Next.js server instance starts, before any request is handled) — throws a clear, explicit error naming exactly which variable is missing. Verified live: `next start` under `NODE_ENV=production` with `TELEGRAM_BOT_TOKEN` unset crashed immediately with `Missing required environment variable(s): TELEGRAM_BOT_TOKEN. See .env.example.`; setting it let the server start and serve real requests correctly.
+7. **`output: "standalone"` (added for the Docker build) silently breaks `next start`.** Next.js explicitly warns `"next start" does not work with "output: standalone" configuration` — this would have broken the project's own default `npm run start` for every non-Docker use (local prod testing, a plain VPS without Docker) the moment `output: standalone` was added globally. Fixed by gating it behind a `BUILD_STANDALONE=true` env var, set only by the Dockerfile's build stage; `npm run build && npm run start` is unaffected (verified live, both with and without the flag).
+8. **`next build` requires `DATABASE_URL` to be set even to a syntactically-valid placeholder** (not a newly-introduced bug — pre-existing behavior, but undocumented and would have silently broken a naive Docker build). `next build`'s page-data-collection step statically imports every route module, which imports `src/lib/db/prisma.ts`, whose module-level `PrismaClient` constructor throws if `DATABASE_URL` is unset. No live DB connection is actually opened at build time — a placeholder string is sufficient (confirmed live: build succeeds with a fake, unreachable `DATABASE_URL`/`DIRECT_URL`, and `prisma generate` needs no env vars at all). Documented in the Dockerfile itself and in 9.4 below; did not change `prisma.ts` (would be a real behavior change to a working, deliberately-eager singleton-caching pattern — see Section 6 — for no benefit).
+
+### 9.2 Security audit
+
+- **Authentication**: `verifyTelegramInitData` (`src/lib/telegram/verify.ts`) implements Telegram's documented HMAC-SHA256 algorithm correctly, with a constant-time hash comparison (`timingSafeEqualHex`) and a bounded `auth_date` freshness window (24h + 5s clock-skew tolerance). Session tokens are 256-bit `crypto.randomBytes`, stored only as a SHA-256 hash (`sessions.tokenHash`) — a DB leak alone cannot be replayed as a usable session. Cookie is `HttpOnly`, `Secure` in production, `SameSite=Lax`, 30-day expiry. Dev-auth is triple-gated (`NODE_ENV=development` AND `DEV_AUTH_ENABLED=true` AND a caller-uncontrollable server-side `DEV_TELEGRAM_USER_ID`) and dynamically imported only inside that already-guarded branch, so it is not reachable at all in a production build. See 9.1 item 1 for the one real bug found in this path.
+- **Authorization / IDOR**: every route except the two auth routes themselves (`login`, `logout` — correctly unauthenticated/self-scoped) calls `getCurrentUser()`, which resolves strictly from the server-side session cookie, never from client-supplied input (verified: zero routes read a `userId` from the request body/query — Zod schemas have no such field, and `.strict()` rejects one if a client tries to smuggle it in, e.g. `auth.test.ts`'s and `series/route.test.ts`'s explicit smuggling-rejection tests). Every mutating repository call scopes its `where` by `userId` (spot-checked: `calendar-transaction-repository.ts`, `calendar-event-series-repository.ts`, `banner-state-repository.ts`, `resource-balance-repository.ts` — all `updateMany`/`deleteMany`/`findFirst` calls include `userId`). One repository function (`upsertExceptionWithVersion`) scopes by `{seriesId, occurrenceDate, version}` without `userId` in that specific call — verified safe because its only caller (`upsertOccurrenceException`, `calendar-event-exception-service.ts`) already resolves and ownership-checks the series via `getSeriesById(userId, seriesId)` first, and a series' `userId` is never reassigned after creation, so there's no TOCTOU window.
+- **Input validation**: every write endpoint uses a Zod `.strict()` schema (rejects unknown fields outright — verified via dedicated tests at multiple routes). Found and fixed the one real gap (9.1 item 1).
+- **Optimistic concurrency**: `resource_balances`, `banner_states`, `calendar_event_series`, `calendar_event_exceptions`, and `calendar_transactions` all use the same `version` + atomic `updateMany({where: {..., version: expectedVersion}})` pattern — a stale write affects zero rows, detected via `result.count === 0`, mapped to a typed `STALE_STATE` (409) response carrying the current server-side record so the client can re-diff rather than blindly retry. Verified live in Stage 7's E2E pass (the split-then-edit sequence exercises version increments correctly).
+- **Idempotency**: `IdempotencyRecord` (userId, action, idempotencyKey, requestHash) — a retried request with the *same* key and *same* (canonicalized, hashed) payload replays the original response (`replay: true`); the *same* key with a *different* payload is rejected as `IDEMPOTENCY_KEY_REUSED` (409), never silently replays the wrong result. Both paths verified live against a real database in Stage 7 (resubmitting `PUT /api/resources` with an identical key+payload replayed correctly; resubmitting with the same key and a different payload was correctly rejected).
+- **CSRF**: cookie is `SameSite=Lax`, and — verified across every route file — no `GET` handler anywhere mutates state, so a cross-site top-level navigation (the one case `SameSite=Lax` still allows) can't trigger a write. Cross-site `fetch()`/XHR `POST`s don't carry the cookie under `Lax` at all. No separate CSRF token is needed given this shape.
+- **XSS**: no `dangerouslySetInnerHTML`, `eval`, or `new Function` anywhere in `src/` (verified via full-repo grep). React's default JSX escaping covers all rendered user content (transaction notes, series notes, etc.).
+- **Secrets handling**: `TELEGRAM_BOT_TOKEN` is read only in `auth-service.ts` (`server-only`-adjacent, never a `NEXT_PUBLIC_*` var, never returned in any response). `.env*` is gitignored. Session tokens/idempotency keys are hashed or opaque before storage. Added `.dockerignore` (excludes `.env*`) specifically because Next's standalone build output copies whatever `.env` file is present on disk at build time into the deployable bundle (verified live: it does, when one exists) — the Dockerfile's build stage therefore uses placeholder env vars, never a real `.env`, so no real secret can be baked into an image layer.
+- **Known, accepted risk — not changed**: Telegram Desktop and `web.telegram.org` embed Mini Apps in an iframe; some browsers' third-party-cookie restrictions (Safari ITP, Chrome's ongoing phase-out) can in principle prevent a `SameSite=Lax` cookie from round-tripping inside that iframe context. This is a known, widely-reported Telegram Mini App gotcha, not something introduced here. No code change was made for it (redesigning session delivery to not depend on cookies is a real architectural change, well beyond an audit-and-fix pass) — flagged in the release checklist (9.5) as something to specifically test against real Telegram Desktop/Web before launch, with a token-in-`initData`-per-request fallback as the documented escape hatch if it's confirmed broken.
+- **Rate limiting — recommendation only, not implemented**: no rate limiting exists anywhere (no `middleware.ts`, no dependency on any rate-limit service). Both `/api/auth/telegram` and every write endpoint are unlimited today. Recommend adding IP+session-based limiting (e.g. `@upstash/ratelimit` on Vercel, or a reverse-proxy-level limit on a VPS/Docker deployment) before high-traffic launch — deliberately not implemented here since it requires provisioning an external service, which is infrastructure the app's owner needs to choose and pay for, not something to add silently.
+- **Security headers**: added `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (denies camera/microphone/geolocation/payment/usb — none are used), `Strict-Transport-Security` (`next.config.ts`). Deliberately did **not** add `X-Frame-Options` or a `frame-ancestors` CSP directive — either would block Telegram Desktop/Web's iframe embedding and break the app for those clients. Did **not** add a full `Content-Security-Policy` (script-src etc.) — the app loads `https://telegram.org/js/telegram-web-app.js` via a plain `<script>` tag and Next.js itself relies on inline hydration scripts; a CSP tight enough to be meaningful needs nonce wiring and real-browser testing this environment can't do (no live Telegram client to verify against) — recommended as a follow-up, not guessed at blindly here.
+
+### 9.3 Performance audit
+
+Full findings from the dedicated audit pass; only the composite index (9.1
+item 3) was acted on — the rest are `find`, not `fix`, per this stage's
+scope, ranked by actual impact at realistic Telegram Mini App traffic
+(hundreds-to-low-thousands of users, not millions):
+
+- **Real, unaddressed**: `MonthGridView`/`DayCell` (`src/features/calendar/`) re-render every day cell on any calendar page state change (e.g. opening any dialog) — neither is wrapped in `React.memo`, and callbacks passed down aren't `useCallback`-stabilized. Cheap leaf components, bounded to one month grid (~35-42 cells), so the cost is low today; a real, easy fix (`React.memo(DayCell)` + `useCallback`) if the calendar UI ever gets janky.
+- **Real, unaddressed, already partly documented**: `ResourceBalancePanel` and `BannerPityPanel` both fetch the same resource-balance endpoint under *different* cache keys (`"statistics:resource-balance"` vs `"statistics:resource-balance-for-pity"`), so even a future request-dedup layer would still miss between them unless the keys are unified first. The Statistics page overall fires 4 independent GETs on mount with zero sharing.
+- **Real, unaddressed, already documented** (DEVELOPMENT_STATUS Section 5): `getStatisticsOverview` reads `CalendarTransaction` twice per request (once via `getMergedOccurrences`, once directly) because `ActualOccurrence` used to strip fields the statistics breakdowns needed. Stage 6E's fix (widening `ActualOccurrence`) removed the *original* reason for this, but deduplicating the reads themselves is a separate change, left as-is.
+- **Confirmed non-issues** (verified, not just assumed): `lib/query/query-cache.ts`'s invalidation is correctly scoped by key prefix, not global; every pure `lib/*-math/*.ts` hot path (recurrence expansion, merge, forecast, statistics aggregation) already uses single-pass `Map`/`Set` grouping, no `O(n²)` patterns found; no N+1 query pattern found in any repository/service (batch lookups like `listExceptionsForSeriesIds` are already used correctly); every `findMany` without an explicit `take` is bounded indirectly by an existing request-range cap (366 days server-side).
+- **Fixed**: the one confirmed missing index (`CalendarTransaction(userId, localDate)`, 9.1 item 3). A second, optional composite (`CalendarEventSeries(userId, isActive)`) was evaluated and skipped — per-user series counts are naturally small, so it's low-impact.
+
+### 9.4 Deployment
+
+**Recommended production settings** (both targets): `NODE_ENV=production`;
+real `DATABASE_URL` (pooled) + `DIRECT_URL` (direct) pointing at your
+production Postgres; real `TELEGRAM_BOT_TOKEN` from BotFather;
+`NEXT_PUBLIC_APP_URL` set to your real HTTPS deployment URL;
+`DEV_AUTH_ENABLED` unset or `false` (it's hard-gated to
+`NODE_ENV=development` regardless, but leave it explicit); a `CRON_SECRET`
+if you wire up the maintenance endpoint (9.1 item 4) — leave it unset to
+keep that endpoint disabled (503) if you don't.
+
+**Vercel:**
+
+1. Import the repo, framework preset auto-detects Next.js — no build
+   command override needed (do **not** set `BUILD_STANDALONE`; Vercel uses
+   its own build pipeline and `output: standalone` is irrelevant to it).
+2. Set the environment variables above in the Vercel project settings
+   (Production + Preview as appropriate).
+3. Run `npx prisma migrate deploy` against the production `DATABASE_URL`/
+   `DIRECT_URL` once, out-of-band (a local shell, or a one-off Vercel
+   deploy hook/GitHub Action step) — this repo does **not** run migrations
+   automatically on deploy, by design, so a bad migration can never block
+   or corrupt a live deploy silently.
+4. `vercel.json` already declares the daily `GET /api/internal/maintenance`
+   cron (03:00 UTC) — Vercel automatically sends
+   `Authorization: Bearer $CRON_SECRET` on cron-triggered requests when
+   `CRON_SECRET` is set as a project env var, matching this endpoint's
+   expectation exactly. No extra wiring needed beyond setting the env var.
+
+**VPS with Docker:**
+
+1. `docker build -t proxy-pull-planner .` — multi-stage build; the build
+   stage uses a placeholder `DATABASE_URL`/`DIRECT_URL` (see 9.1 item 8 and
+   the Dockerfile's own comments) and never receives real secrets; the
+   final image contains only the traced standalone server, no `.env`, no
+   full `node_modules`, no source.
+2. Run `npx prisma migrate deploy` against the real production DB once,
+   from anywhere with network access to it (does not need to be from
+   inside the container) — same reasoning as the Vercel step.
+3. `docker run -p 3000:3000 -e DATABASE_URL=... -e DIRECT_URL=... -e TELEGRAM_BOT_TOKEN=... -e NEXT_PUBLIC_APP_URL=... [-e CRON_SECRET=...] proxy-pull-planner`
+   — real secrets are injected purely at container-run time.
+4. Put a reverse proxy (Caddy/nginx/Traefik) in front for TLS termination
+   — Telegram requires the Mini App to be served over HTTPS. Caddy is the
+   least-config option (automatic Let's Encrypt).
+5. Schedule the maintenance sweep yourself — a crontab entry or systemd
+   timer running (daily is enough):
+   `curl -sf -H "Authorization: Bearer $CRON_SECRET" https://your-domain/api/internal/maintenance`
+
+### 9.5 Telegram BotFather / Mini App configuration checklist
+
+Nothing here has been done against a real bot — this is exactly the
+external, human, one-time setup that remains before going live:
+
+- [ ] Register a bot with [@BotFather](https://t.me/BotFather) (`/newbot`), copy the token into `TELEGRAM_BOT_TOKEN` (production env, never committed).
+- [ ] `/setmenubutton` (or `/newapp` for a full Mini App) pointing at your deployed HTTPS URL (`NEXT_PUBLIC_APP_URL`) — must be HTTPS, Telegram will not launch a Mini App over plain HTTP.
+- [ ] `/setdomain` if using the Menu Button + Web App login widget path, matching your deployed domain exactly.
+- [ ] Confirm `auth_date` freshness (24h window, `verify.ts`) is acceptable for your expected usage pattern — Telegram refreshes `initData` on every WebApp reopen, so this only matters for a tab left open unusually long.
+- [ ] Test the real launch flow from **both** Telegram mobile (iOS/Android) and Telegram Desktop/`web.telegram.org` specifically — the latter runs the Mini App in an iframe (see 9.2's cookie/iframe note); confirm login actually completes there before considering the app launch-ready.
+- [ ] Set `NEXT_PUBLIC_APP_URL` to the exact deployed URL and re-check `/setmenubutton` matches it after any domain change.
+- [ ] Decide on and set `CRON_SECRET` (Vercel) or configure the crontab/systemd timer (VPS) for `/api/internal/maintenance` (9.1 item 4) — otherwise sessions/idempotency records accumulate forever.
+- [ ] Provision a real production Postgres instance (Supabase or otherwise) and run `npx prisma migrate deploy` against it (9.4).
+- [ ] Decide on rate limiting before any public/high-traffic launch (9.2) — not implemented, recommendation only.
