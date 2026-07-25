@@ -8,25 +8,38 @@ export function DayCell({
   cell,
   today,
   summary,
+  selected,
   onSelect,
 }: {
   cell: MonthGridCell;
   today: LocalDate;
   summary: DaySummary | null;
+  selected?: boolean;
   onSelect: (date: LocalDate) => void;
 }) {
   const isToday = compareLocalDate(cell.date, today) === 0;
+  const isSelected = selected ?? false;
 
   return (
     <button
       type="button"
       onClick={() => onSelect(cell.date)}
+      aria-pressed={isSelected}
       aria-label={`${formatLocalDate(cell.date)}${summary ? `, чистое изменение ${summary.net}` : ""}`}
-      className={`flex min-h-14 flex-col items-start gap-0.5 rounded-lg p-1 text-left ${
+      className={`flex min-h-14 flex-col items-start gap-0.5 rounded-lg border p-1 text-left ${
         cell.isCurrentMonth ? "" : "opacity-40"
-      } ${isToday ? "ring-2 ring-accent-yellow" : ""}`}
+      } ${isToday ? "ring-2 ring-accent-yellow" : ""} ${
+        isSelected ? "border-accent-yellow font-bold" : "border-transparent"
+      }`}
     >
-      <span className="text-xs font-semibold">{cell.date.day}</span>
+      <span className="flex items-center gap-0.5 text-xs font-semibold">
+        {cell.date.day}
+        {isSelected && (
+          <span aria-hidden="true" className="text-[9px]">
+            ✓
+          </span>
+        )}
+      </span>
       {summary && (
         <span className="flex flex-col gap-0.5">
           <span

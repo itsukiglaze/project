@@ -75,4 +75,31 @@ describe("DayCell", () => {
     );
     expect(screen.getByRole("button")).toHaveClass("opacity-40");
   });
+
+  it("exposes aria-pressed=false when it isn't the selected date", () => {
+    render(
+      <DayCell
+        cell={{ date: { year: 2026, month: 1, day: 5 }, isCurrentMonth: true }}
+        today={TODAY}
+        summary={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("exposes aria-pressed=true and a non-colour marker (a checkmark) when it is the selected date", () => {
+    render(
+      <DayCell
+        cell={{ date: { year: 2026, month: 1, day: 5 }, isCurrentMonth: true }}
+        today={TODAY}
+        summary={null}
+        selected
+        onSelect={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole("button");
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveTextContent("✓");
+  });
 });

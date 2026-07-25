@@ -84,7 +84,7 @@ describe("DayDetailSheet", () => {
     render(
       <DayDetailSheet date={DATE} timezone="UTC" occurrences={[]} onClose={vi.fn()} onEditSeriesOccurrence={vi.fn()} />,
     );
-    expect(screen.getByText(/пока нет записей/i)).toBeInTheDocument();
+    expect(screen.getByText(/на эту дату поступлений нет/i)).toBeInTheDocument();
   });
 
   it("lists actual one-time transactions with edit/delete controls", () => {

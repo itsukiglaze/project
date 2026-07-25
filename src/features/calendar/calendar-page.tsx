@@ -17,6 +17,8 @@ import { MonthNavigation } from "./month-navigation";
 import { SeriesForm, type SeriesFormResult } from "./series-form";
 import { SeriesListPanel } from "./series-list-panel";
 import { ForecastPanel } from "./forecast-panel";
+import { OnboardingEmptyState } from "./onboarding-empty-state";
+import { SelectedDatePanel } from "./selected-date-panel";
 import { useFocusTrap } from "./use-focus-trap";
 import { getTodayLocalDate } from "./local-date-client";
 import { summarizeOccurrencesByDay } from "./day-summary";
@@ -42,18 +44,25 @@ type Modal =
   | { kind: "cancel-occurrence-confirm"; occurrence: VirtualOccurrence };
 
 export function CalendarPage() {
-  const { user } = useAuth();
+  const { user, status: authStatus } = useAuth();
   const today = useMemo(() => getTodayLocalDate(), []);
   const [yearMonth, setYearMonth] = useState<YearMonth>(() => ({ year: today.year, month: today.month }));
   const [modal, setModal] = useState<Modal>({ kind: "none" });
+  const [selectedDate, setSelectedDate] = useState<LocalDate | null>(null);
 
+  // Gated on auth being resolved — the bottom nav (and so a route change to
+  // /calendar) is reachable while AuthProvider's own bootstrap is still in
+  // flight, so firing these unconditionally on mount can race the session
+  // cookie being set and come back 401, which would otherwise look
+  // identical to a genuine load failure and never retry on its own.
+  const queriesEnabled = authStatus === "authenticated";
   const rangeStart = firstDateOfMonth(yearMonth);
   const rangeEnd = lastDateOfMonth(yearMonth);
-  const occurrencesQuery = useOccurrencesQuery(rangeStart, rangeEnd);
+  const occurrencesQuery = useOccurrencesQuery(rangeStart, rangeEnd, queriesEnabled);
   // Single source of truth for the loaded series list — passed to
   // SeriesListPanel and also used directly to resolve a series by id for
   // the edit-scope flow, so we never issue an extra fetch just to look one up.
-  const seriesQuery = useSeriesListQuery();
+  const seriesQuery = useSeriesListQuery(queriesEnabled);
   const seriesMutations = useSeriesMutations();
   const exceptionMutation = useExceptionMutation();
 
@@ -89,48 +98,101 @@ export function CalendarPage() {
     }
   }
 
+  function openDayDetail(date: LocalDate) {
+    setSelectedDate(date);
+    setModal({ kind: "day-detail", date });
+  }
+
+  const hasAnySource = seriesQuery.status === "success" && seriesList.length > 0;
+  // "No recurring series and no calendar transactions" — series existence is
+  // known globally (seriesQuery), but a one-time transaction can only be
+  // checked against the currently-loaded month's occurrences without adding
+  // a new API call, which is out of scope here. This correctly triggers for
+  // a genuine first-time user landing on the default (current) month.
+  const currentMonthHasActualTransaction =
+    occurrencesQuery.status === "success" && occurrencesQuery.data.occurrences.some((o) => o.kind === "actual");
+  const showOnboarding =
+    seriesQuery.status === "success" && !hasAnySource && occurrencesQuery.status === "success" && !currentMonthHasActualTransaction;
+
+  const selectedDateOccurrences = selectedDate ? occurrencesForDay(selectedDate) : [];
+
   return (
     <div className="space-y-4 p-4 pt-6">
-      <MonthNavigation
-        yearMonth={yearMonth}
-        onPrev={() => setYearMonth((prev) => addMonthsToYearMonth(prev, -1))}
-        onNext={() => setYearMonth((prev) => addMonthsToYearMonth(prev, 1))}
-        onToday={() => setYearMonth({ year: today.year, month: today.month })}
-      />
+      <header>
+        <h1 className="text-xl font-bold">Календарь доходов</h1>
+        <p className="text-xs text-muted">
+          Добавьте регулярные и разовые поступления — календарь покажет, когда они ожидаются и каким
+          станет баланс.
+        </p>
+      </header>
 
-      {occurrencesQuery.status === "loading" && (
-        <div className="animate-pulse rounded-2xl bg-border" style={{ height: 280 }} />
-      )}
-
-      {occurrencesQuery.status === "error" && (
-        <section role="alert" className="rounded-2xl border border-accent-red/40 bg-accent-red/5 p-4 text-sm">
-          Не удалось загрузить календарь. Попробуйте ещё раз.
-          <button
-            type="button"
-            onClick={occurrencesQuery.refetch}
-            className="mt-2 block min-h-11 w-full rounded-xl bg-surface-contrast text-sm font-semibold text-background"
-          >
-            Повторить
-          </button>
-        </section>
-      )}
-
-      {occurrencesQuery.status === "success" && (
-        <MonthGridView
-          weeks={weeks}
-          today={today}
-          summaries={summaries}
-          onSelectDay={(date) => setModal({ kind: "day-detail", date })}
+      {showOnboarding && (
+        <OnboardingEmptyState
+          onAddSource={() => setModal({ kind: "create-series" })}
+          onAddOneTime={() => openDayDetail(today)}
         />
       )}
 
-      <ForecastPanel />
+      <ForecastPanel enabled={queriesEnabled} />
 
       <SeriesListPanel
         query={seriesQuery}
         onCreate={() => setModal({ kind: "create-series" })}
         onEdit={(series) => setModal({ kind: "edit-series", series })}
         onDelete={(series) => setModal({ kind: "delete-series-confirm", series })}
+      />
+
+      <div className="space-y-2">
+        <MonthNavigation
+          yearMonth={yearMonth}
+          onPrev={() => setYearMonth((prev) => addMonthsToYearMonth(prev, -1))}
+          onNext={() => setYearMonth((prev) => addMonthsToYearMonth(prev, 1))}
+          onToday={() => setYearMonth({ year: today.year, month: today.month })}
+        />
+        <p className="text-xs text-muted">Нажмите на дату, чтобы увидеть поступления.</p>
+
+        {occurrencesQuery.status === "loading" && (
+          <div className="animate-pulse rounded-2xl bg-border" style={{ height: 280 }} />
+        )}
+
+        {occurrencesQuery.status === "error" && (
+          <section
+            role="alert"
+            className="space-y-2 rounded-2xl border border-accent-red/40 bg-accent-red/5 p-4 text-sm"
+          >
+            <p>Не удалось загрузить календарь.</p>
+            <button
+              type="button"
+              onClick={occurrencesQuery.refetch}
+              className="min-h-11 w-full rounded-xl bg-surface-contrast text-sm font-semibold text-background"
+            >
+              Повторить загрузку календаря
+            </button>
+          </section>
+        )}
+
+        {occurrencesQuery.status === "success" && (
+          <MonthGridView
+            weeks={weeks}
+            today={today}
+            selectedDate={selectedDate}
+            summaries={summaries}
+            onSelectDay={openDayDetail}
+          />
+        )}
+
+        {!hasAnySource && !showOnboarding && occurrencesQuery.status === "success" && (
+          <p className="text-xs text-muted">
+            Добавьте источник, чтобы увидеть будущие поступления на календаре.
+          </p>
+        )}
+      </div>
+
+      <SelectedDatePanel
+        date={selectedDate}
+        hasAnySource={hasAnySource}
+        occurrences={selectedDateOccurrences}
+        onOpenDetails={() => selectedDate && openDayDetail(selectedDate)}
       />
 
       {modal.kind === "day-detail" && (

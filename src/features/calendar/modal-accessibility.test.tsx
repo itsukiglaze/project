@@ -41,6 +41,26 @@ vi.mock("./local-date-client", () => ({
   getTodayLocalDate: () => ({ year: 2026, month: 1, day: 15 }),
 }));
 
+vi.mock("@/components/providers/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    user: {
+      id: "user-1",
+      telegramId: "1",
+      username: null,
+      firstName: null,
+      lastName: null,
+      photoUrl: null,
+      timezone: "UTC",
+    },
+    errorCode: null,
+    authFailureCategory: null,
+    launchPath: null,
+    retry: () => undefined,
+    completeLoginWidgetAuth: () => undefined,
+  }),
+}));
+
 import { CalendarPage } from "./calendar-page";
 
 const SERIES: SeriesRecordDto = {
@@ -111,7 +131,7 @@ describe("Calendar modal dialogs — systematic accessibility pass", () => {
 
   it("create-series dialog: accessible, traps focus, Escape returns focus to its trigger", async () => {
     render(<CalendarPage />);
-    const trigger = await screen.findByRole("button", { name: /\+ новая/i });
+    const trigger = await screen.findByRole("button", { name: /\+ добавить источник/i });
     await userEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog", { name: "Серия" });
@@ -126,7 +146,7 @@ describe("Calendar modal dialogs — systematic accessibility pass", () => {
 
   it("edit-series dialog: accessible, Escape returns focus to its trigger", async () => {
     render(<CalendarPage />);
-    const trigger = await screen.findByRole("button", { name: /^изменить$/i });
+    const trigger = await screen.findByRole("button", { name: /изменить источник/i });
     await userEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog", { name: "Серия" });
@@ -141,7 +161,7 @@ describe("Calendar modal dialogs — systematic accessibility pass", () => {
 
   it("delete-series-confirm dialog: accessible, focuses its confirm button, Escape cancels without deleting", async () => {
     render(<CalendarPage />);
-    const trigger = await screen.findByRole("button", { name: /^удалить$/i });
+    const trigger = await screen.findByRole("button", { name: /удалить источник/i });
     await userEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog", { name: /удалить серию/i });

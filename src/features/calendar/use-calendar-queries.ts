@@ -6,16 +6,16 @@ import { useQuery } from "@/lib/query/use-query";
 import { fetchForecast, fetchOccurrences, fetchSeriesList } from "./api";
 import { CALENDAR_QUERY_KEYS } from "./query-cache";
 
-export function useOccurrencesQuery(from: LocalDate, to: LocalDate) {
+export function useOccurrencesQuery(from: LocalDate, to: LocalDate, enabled = true) {
   const key = CALENDAR_QUERY_KEYS.occurrences(formatLocalDate(from), formatLocalDate(to));
-  return useQuery(key, () => fetchOccurrences(from, to));
+  return useQuery(key, () => fetchOccurrences(from, to), enabled);
 }
 
-export function useForecastQuery(days: number) {
+export function useForecastQuery(days: number, enabled = true) {
   const key = CALENDAR_QUERY_KEYS.forecast(days);
-  return useQuery(key, () => fetchForecast(days));
+  return useQuery(key, () => fetchForecast(days), enabled);
 }
 
-export function useSeriesListQuery() {
-  return useQuery(CALENDAR_QUERY_KEYS.seriesList, () => fetchSeriesList());
+export function useSeriesListQuery(enabled = true) {
+  return useQuery(CALENDAR_QUERY_KEYS.seriesList, () => fetchSeriesList(), enabled);
 }

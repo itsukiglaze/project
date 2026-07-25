@@ -108,7 +108,7 @@ export function DayDetailSheet({
         ) : (
           <div className="space-y-4">
             {occurrences.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted">На этот день пока нет записей.</p>
+              <p className="py-6 text-center text-sm text-muted">На эту дату поступлений нет.</p>
             )}
 
             {actual.length > 0 && (

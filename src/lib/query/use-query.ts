@@ -27,10 +27,18 @@ type SuccessData<TFetchResult> = TFetchResult extends { status: "success"; data:
  * new result resolves (stale-while-revalidate), which also means `load`
  * never needs to call `setState` synchronously at its own top: state is
  * only ever set inside the resolved-promise callback.
+ *
+ * `enabled` (default true) gates the actual fetch. Pass `false` while a
+ * prerequisite (e.g. auth) hasn't resolved yet — firing immediately on
+ * mount regardless can race a session cookie still being set and come
+ * back 401, which then looks identical to a genuine error and never
+ * retries on its own once the prerequisite becomes true. Staying in
+ * "loading" until the caller flips `enabled` avoids that false negative.
  */
 export function useQuery<TFetchResult extends { status: string }>(
   queryKey: string,
   fetcher: () => Promise<TFetchResult>,
+  enabled = true,
 ): QueryState<SuccessData<TFetchResult>, Exclude<TFetchResult, { status: "success" }>> & {
   refetch: () => void;
 } {
@@ -60,6 +68,7 @@ export function useQuery<TFetchResult extends { status: string }>(
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     isMountedRef.current = true;
     load();
     const unsubscribe = subscribeQueryKey(queryKey, load);
@@ -67,7 +76,7 @@ export function useQuery<TFetchResult extends { status: string }>(
       isMountedRef.current = false;
       unsubscribe();
     };
-  }, [queryKey, load]);
+  }, [queryKey, load, enabled]);
 
   return { ...state, refetch: load };
 }

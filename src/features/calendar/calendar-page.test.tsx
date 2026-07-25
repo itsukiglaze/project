@@ -41,6 +41,26 @@ vi.mock("./local-date-client", () => ({
   getTodayLocalDate: () => ({ year: 2026, month: 1, day: 15 }),
 }));
 
+vi.mock("@/components/providers/auth-provider", () => ({
+  useAuth: () => ({
+    status: "authenticated",
+    user: {
+      id: "user-1",
+      telegramId: "1",
+      username: null,
+      firstName: null,
+      lastName: null,
+      photoUrl: null,
+      timezone: "UTC",
+    },
+    errorCode: null,
+    authFailureCategory: null,
+    launchPath: null,
+    retry: () => undefined,
+    completeLoginWidgetAuth: () => undefined,
+  }),
+}));
+
 import { CalendarPage } from "./calendar-page";
 
 const SERIES: SeriesRecordDto = {
@@ -198,5 +218,101 @@ describe("CalendarPage — split flow ('this and future')", () => {
     await userEvent.click(within(splitDialog).getByRole("button", { name: /отмена/i }));
     expect(screen.queryByRole("dialog", { name: /разделить серию/i })).not.toBeInTheDocument();
     expect(mockSplitSeries).not.toHaveBeenCalled();
+  });
+});
+
+describe("CalendarPage — purpose, onboarding, and selected-date wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows the page title and a plain-language explanation of what the screen is for", async () => {
+    setupSuccessfulQueries();
+    render(<CalendarPage />);
+    expect(await screen.findByRole("heading", { name: "Календарь доходов" })).toBeInTheDocument();
+    expect(screen.getByText(/добавьте регулярные и разовые поступления/i)).toBeInTheDocument();
+  });
+
+  it("shows the onboarding empty state when there are no sources and no actual transactions this month", async () => {
+    mockFetchSeriesList.mockResolvedValue({ status: "success", data: { series: [] } });
+    mockFetchOccurrences.mockResolvedValue({ status: "success", data: { occurrences: [] } });
+    mockFetchForecast.mockResolvedValue({
+      status: "success",
+      data: {
+        requestedHorizonDays: 30,
+        effectiveHorizonDays: 30,
+        rangeStart: "2026-01-15",
+        rangeEnd: "2026-02-14",
+        occurrences: [],
+        dailyBalances: [],
+        projectedEndingBalance: 0,
+      },
+    });
+
+    render(<CalendarPage />);
+    expect(await screen.findByRole("heading", { name: "Начните с источника дохода" })).toBeInTheDocument();
+    // The onboarding primary action reuses the existing series-creation flow.
+    const addSourceButtons = screen.getAllByRole("button", { name: "+ Добавить источник" });
+    expect(addSourceButtons.length).toBeGreaterThan(0);
+    await userEvent.click(addSourceButtons[0]);
+    expect(await screen.findByRole("dialog", { name: "Серия" })).toBeInTheDocument();
+  });
+
+  it("does not show the onboarding empty state once a source exists", async () => {
+    setupSuccessfulQueries();
+    render(<CalendarPage />);
+    await screen.findByRole("heading", { name: "Регулярные источники" });
+    expect(screen.queryByRole("heading", { name: "Начните с источника дохода" })).not.toBeInTheDocument();
+  });
+
+  it("shows an instruction hint near the calendar grid so clicking a date isn't a guess", async () => {
+    setupSuccessfulQueries();
+    render(<CalendarPage />);
+    expect(await screen.findByText("Нажмите на дату, чтобы увидеть поступления.")).toBeInTheDocument();
+  });
+
+  it("shows a contextual calendar-load error with a retry button naming what it retries", async () => {
+    mockFetchSeriesList.mockResolvedValue({ status: "success", data: { series: [SERIES] } });
+    mockFetchOccurrences.mockResolvedValue({ status: "network_error" });
+    mockFetchForecast.mockResolvedValue({
+      status: "success",
+      data: {
+        requestedHorizonDays: 30,
+        effectiveHorizonDays: 30,
+        rangeStart: "2026-01-15",
+        rangeEnd: "2026-02-14",
+        occurrences: [],
+        dailyBalances: [],
+        projectedEndingBalance: 0,
+      },
+    });
+
+    render(<CalendarPage />);
+    expect(await screen.findByText("Не удалось загрузить календарь.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /повторить загрузку календаря/i })).toBeInTheDocument();
+  });
+
+  it("selecting a date shows a persistent selected-date section below the grid with the real occurrence data", async () => {
+    setupSuccessfulQueries();
+    render(<CalendarPage />);
+    const dayCell = await screen.findByRole("button", { name: /2026-01-15/ });
+    await userEvent.click(dayCell);
+
+    // Close the day-detail sheet — the selected-date section must still show the date's data underneath it.
+    await userEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+
+    expect(screen.getByRole("heading", { name: "15 января" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /подробнее и добавить операцию/i })).toBeInTheDocument();
+  });
+
+  it("shows the empty selected-date message when the chosen date has no expected поступления", async () => {
+    setupSuccessfulQueries();
+    mockFetchOccurrences.mockResolvedValue({ status: "success", data: { occurrences: [] } });
+    render(<CalendarPage />);
+    const dayCell = await screen.findByRole("button", { name: /2026-01-20/ });
+    await userEvent.click(dayCell);
+    await userEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+
+    expect(screen.getByText("На эту дату поступлений нет.")).toBeInTheDocument();
   });
 });

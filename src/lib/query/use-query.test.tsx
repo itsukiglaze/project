@@ -65,4 +65,25 @@ describe("useQuery", () => {
     rerender({ key: "key-b" });
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   });
+
+  it("does not call the fetcher at all while enabled=false, and stays in loading", () => {
+    const fetcher = vi.fn().mockResolvedValue({ status: "success", data: { value: 1 } });
+    const { result } = renderHook(() => useQuery("key-enabled-false", fetcher, false));
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(result.current.status).toBe("loading");
+  });
+
+  it("starts fetching once enabled flips from false to true", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ status: "success", data: { value: 1 } });
+    const { result, rerender } = renderHook(({ enabled }) => useQuery("key-enabled-flip", fetcher, enabled), {
+      initialProps: { enabled: false },
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.status).toBe("success"));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 });

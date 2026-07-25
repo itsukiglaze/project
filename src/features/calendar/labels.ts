@@ -48,3 +48,19 @@ export const MONTH_LABELS = [
   "Ноябрь",
   "Декабрь",
 ];
+
+/** Genitive case ("25 июля", not "25 Июль") — for plain-Russian date headings, see date-format.ts. */
+export const MONTH_LABELS_GENITIVE = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+];
