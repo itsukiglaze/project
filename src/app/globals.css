@@ -51,6 +51,13 @@ body {
 
 body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  /* --tg-viewport-stable-height (ThemeProvider, via WebApp.viewportStableHeight)
+     is Telegram's own settled viewport height in px — preferred over the
+     `min-h-full` (100%) Tailwind utility on <html>/<body> when available,
+     since 100%/100vh can be wrong inside Telegram's WebView (keyboard
+     insets, in-app chrome). Falls back to 100% outside Telegram or on
+     clients too old to report it. */
+  min-height: var(--tg-viewport-stable-height, 100%);
 }
 
 /* No horizontal scroll anywhere in the app (requirement 19). */

@@ -34,6 +34,13 @@ export interface TelegramHapticFeedback {
   selectionChanged: () => void;
 }
 
+export interface TelegramSafeAreaInset {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: Record<string, unknown>;
@@ -52,6 +59,29 @@ export interface TelegramWebApp {
   close: () => void;
   onEvent: (eventType: string, cb: () => void) => void;
   offEvent: (eventType: string, cb: () => void) => void;
+  /**
+   * Official feature-detection helper (Bot API 6.1+): "is the CLIENT's
+   * WebApp implementation at least this version" — the one Telegram-
+   * sanctioned way to gate a newer API method, preferred over manually
+   * comparing `.version` strings. Itself optional: absent entirely on
+   * ancient/partial WebApp implementations, so every call site must still
+   * feature-detect this method before calling it.
+   */
+  isVersionAtLeast?: (version: string) => boolean;
+  /**
+   * Bot API 8.0+: insets the client's own chrome (status bar, home
+   * indicator, etc.) occupies, in fullscreen mode. Preferred over CSS
+   * `env(safe-area-inset-*)` when present, since it reflects Telegram's
+   * own reported chrome rather than the OS/browser's guess. Optional —
+   * absent on older clients.
+   */
+  safeAreaInset?: TelegramSafeAreaInset;
+  /**
+   * Bot API 8.0+: like `safeAreaInset`, but also accounts for Telegram's
+   * own in-app UI (e.g. the header) layered on top of the OS chrome.
+   * Optional — absent on older clients.
+   */
+  contentSafeAreaInset?: TelegramSafeAreaInset;
 }
 
 declare global {

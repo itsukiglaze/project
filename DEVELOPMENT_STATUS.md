@@ -23,11 +23,18 @@ continuing this project in Claude Code.
 | **6C** | Statistics UI: resource balance (per-currency), banner pity/guarantee summary, actual/scheduled/expected totals, continuous actual-to-projected trajectory chart, transaction trends, date-range picker, chart/table toggles | Done |
 | **6D** | Full-repo verification (706/706 tests, lint, typecheck, build) | Done |
 | **6E** | LocalDate wire-serialization audit and fix (the Section 5/item-19 flagged gap): centralized `src/lib/api/calendar-dto.ts` DTO/serializer module; every calendar route now explicitly serializes `LocalDate` fields to "YYYY-MM-DD" before `NextResponse.json()`; widened `merge.ts`'s `ActualOccurrence` (id/source/bannerFamily/note/version) so a displayed one-time transaction returned via `/api/calendar/occurrences` is actually editable/deletable (statistics-service.ts's separate `listActualOccurrencesInRange` read was left as-is — see Section 5, still a deliberate tradeoff, not something this fix removed) | Done |
-| **7** | Production readiness: first real Prisma migration (this project had never been migrated before — see Section 9), a real Telegram-login bug found and fixed (empty `initData` was rejected by Zod before ever reaching the dev-auth fallback, making local dev outside Telegram completely unreachable), startup env-var validation (`src/instrumentation.ts`), a scheduled housekeeping endpoint for the two purge routines that existed but were never wired up, Docker + Vercel deployment configs, baseline security headers, one composite DB index, and a full live end-to-end verification pass against a real Postgres database — see Section 9 for the complete writeup | Done |
+| **7** | Production readiness: first real Prisma migration (this project had never been migrated before — see Section 9), a real Telegram-login bug found and fixed (empty `initData` was rejected by Zod before ever reaching the dev-auth fallback, making local dev outside Telegram completely unreachable), startup env-var validation (`src/instrumentation.ts`), a scheduled housekeeping endpoint for the two purge routines that existed but were never wired up, Docker + Vercel deployment configs, baseline security headers, one composite DB index, a real production auth 500 found and fixed (Prisma never negotiated TLS to Supabase), and a full live end-to-end verification pass against a real Postgres database — see Section 9 for the complete writeup | Done |
+| **9** | Alternative Telegram client compatibility: bounded-wait launch detection (handles clients like AyuGram that populate `initData` late or not at all), a typed diagnostics/capability detector, a secure Telegram Login Widget web-login fallback (separate protocol + CSRF nonce, never a bypass of Telegram's own signature check), Telegram theme/viewport/safe-area CSS integration, privacy-safe structured launch diagnostics — see Section 10 for the complete writeup | Done |
 
 ## 2. Current stage
 
-**Stage 7: complete and fully verified.** The app is now deployable as a
+**Stage 9: complete and fully verified.** The app now degrades gracefully
+on Telegram clients that don't populate Mini App `initData` reliably
+(e.g. AyuGram), with a secure web-login fallback — see Section 10 for the
+full writeup, the exact BotFather configuration this adds, and what
+fundamentally can't be fixed client-side no matter what code does.
+
+**Stage 7: complete and fully verified.** The app is deployable as a
 real production Telegram Mini App — see Section 9 for the full production
 readiness report, deployment checklist, and BotFather configuration steps.
 
@@ -144,8 +151,8 @@ rather than oversight:
 
 ## 8. Remaining roadmap
 
-**Stage 5D, Stage 6, Stage 6E, and Stage 7 are all complete** — see Section
-2. Nothing outstanding from any "finish properly" list remains.
+**Stage 5D, Stage 6, Stage 6E, Stage 7, and Stage 9 are all complete** —
+see Section 2. Nothing outstanding from any "finish properly" list remains.
 
 **Stage 5E (not started):** scope not yet defined in this conversation.
 
@@ -155,10 +162,13 @@ rather than oversight:
 
 **No priority follow-up remains from Stage 7** — see Section 9 for the full list of what was verified/fixed/documented. The only genuinely-open items are external, one-time, human actions that no code change can complete: real BotFather bot registration (Section 9 checklist) and provisioning a real production Postgres instance (Supabase or otherwise) to run `prisma migrate deploy` against.
 
+**No priority follow-up remains from Stage 9** — see Section 10 for the full writeup, including the one new BotFather step it adds (`/setdomain` for the Login Widget fallback) and what genuinely cannot be fixed client-side (Section 10.6).
+
 **Always-outstanding infra tasks:**
-- Real Telegram bot registration + Mini App domain/menu-button setup (BotFather) — see Section 9 checklist.
+- Real Telegram bot registration + Mini App domain/menu-button setup (BotFather) — see Section 9 checklist, plus Section 10's `/setdomain` addition for the web-login fallback.
 - Provision a real production Postgres database and run `npx prisma migrate deploy` against it (migrations themselves are done and verified — see Section 9 — this is just "point them at the real prod DB instead of the local one Stage 7 verified against").
 - Schedule `GET /api/internal/maintenance` (Section 9) — the code and docs are done; an operator still has to actually turn on the Vercel Cron / VPS crontab entry post-deploy.
+- Set `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` and `SESSION_SECRET` (Section 10) if the web-login fallback should be available — both optional; the primary Mini App path works without them.
 
 ### Exact commands to run, in order, on a normal machine
 
@@ -291,3 +301,280 @@ external, human, one-time setup that remains before going live:
 - [ ] Decide on and set `CRON_SECRET` (Vercel) or configure the crontab/systemd timer (VPS) for `/api/internal/maintenance` (9.1 item 4) — otherwise sessions/idempotency records accumulate forever.
 - [ ] Provision a real production Postgres instance (Supabase or otherwise) and run `npx prisma migrate deploy` against it (9.4).
 - [ ] Decide on rate limiting before any public/high-traffic launch (9.2) — not implemented, recommendation only.
+
+## 10. Stage 9 — Alternative Telegram Client Compatibility
+
+**Problem this stage fixes**: official Telegram (iOS/Android/Desktop)
+populates `Telegram.WebApp.initData` reliably. AyuGram (and potentially
+other unofficial clients) opens the Mini App WebView but sometimes leaves
+`initData` empty — either never populating it, or populating it a beat
+after `WebApp` itself first appears. Before this stage, the app read
+`initData` exactly once on first React render and, finding it empty,
+showed a generic "must be opened through Telegram" error — with no way
+to log in at all, even though the user genuinely had no way to fix it
+from their side except switching apps.
+
+**Security invariant preserved throughout**: Telegram authentication is
+never bypassed. `initDataUnsafe`, URL params, username, platform,
+user-agent, and any client-supplied identifier are never trusted for
+auth — every identity claim is independently, cryptographically
+re-verified server-side (`verify.ts` for Mini App initData,
+`verify-login-widget.ts` for the new web-login fallback — two genuinely
+different HMAC algorithms, never conflated). Confirmed by the "uses a
+different secret-key derivation" test in `verify-login-widget.test.ts`
+and the live E2E CSRF-rejection test below.
+
+### 10.1 What was implemented, per requirement area
+
+1. **Diagnostics** (`src/lib/telegram/diagnostics.ts`): a typed
+   `snapshotTelegramEnvironment()` reporting `webAppPresent`,
+   `initDataPresent`, `version`, `platform`, and `initDataUnsafePresent`
+   (a presence boolean only — its contents are never read for anything).
+   `isWebAppVersionAtLeast()` wraps Telegram's own official
+   `WebApp.isVersionAtLeast()` feature-detection helper. Deliberately does
+   **not** fingerprint specific unofficial clients via `navigator.userAgent`
+   — Telegram's own reported `platform`/`version` are the structured,
+   official way to distinguish clients, and UA-sniffing a specific
+   third-party client name is fragile (breaks the moment that client
+   changes its UA string) and wasn't needed for anything this app does
+   differently per-client.
+2. **Initialization robustness** (`src/lib/telegram/webapp.ts`,
+   `waitForTelegramLaunch()`): polls for `WebApp.initData` to become
+   non-empty, up to a bounded 1.5s ceiling — resolves immediately if
+   already ready (no artificial delay in the common case), and always
+   terminates (no infinite retry loop; the deadline is checked every
+   iteration). `telegram-web-app.js` was also switched from a plain
+   `<script async>` tag to `next/script` with `strategy="beforeInteractive"`
+   (`layout.tsx`) — loads before any Next.js code runs, minimizing how
+   much of the bounded window actually gets used, though the bounded wait
+   remains the real robustness mechanism since script-loaded doesn't
+   guarantee `initData`-populated. `ready()`/`expand()` (and
+   `BackButton.show()`/`hide()`) now feature-detect the method's presence
+   and swallow exceptions before calling — a partial/unofficial `WebApp`
+   object missing a method, or one that throws, no longer takes anything
+   else down (`initTelegramWebApp`/`showBackButton`/`hideBackButton` in
+   `webapp.ts`).
+3. **Error states** (`src/components/providers/auth-provider.tsx`):
+   `bootstrapSession()` now categorizes every outcome into a typed
+   `AuthFailureCategory` — `EMPTY_INIT_DATA` (WebApp present, initData
+   never became non-empty), `NO_TELEGRAM` (WebApp never appeared; server
+   confirms `MISSING_INIT_DATA`), `INIT_DATA_REJECTED` (server's
+   cryptographic check failed — bad/stale/tampered signature),
+   `SERVER_MISCONFIGURED` (missing `TELEGRAM_BOT_TOKEN` server-side — not
+   the client's fault), `BACKEND_ERROR` (network/500/anything else). The
+   `EMPTY_INIT_DATA` case is short-circuited client-side without a wasted
+   server round trip — the server can't distinguish "WebApp present but
+   empty" from "no WebApp at all" (both send an empty string), and the
+   client already has the more specific answer from the bounded wait.
+   `src/app/page.tsx` shows the exact required message for
+   `EMPTY_INIT_DATA` (localized — the rest of this app's UI is Russian
+   throughout; the string is an exact translation, not a paraphrase):
+   > Этот клиент Telegram не передал безопасные данные авторизации.
+   > Откройте приложение в официальном клиенте Telegram или используйте
+   > безопасный вход через браузер.
+   > *(This Telegram client did not provide secure authorization data.
+   > Open the app in the official Telegram client or use secure web
+   > login.)*
+4. **Secure fallback authentication** — see 10.2 below, the largest piece.
+5. **Client compatibility UI** (`src/components/providers/theme-provider.tsx`,
+   `globals.css`, `bottom-nav.tsx`): Telegram's `theme_params` are now
+   exposed as `--tg-theme-*` CSS custom properties on `:root` — a
+   progressive enhancement layered ON TOP of this app's own branded
+   palette (deliberately not a replacement: swapping to an arbitrary
+   client theme's colors wholesale would risk breaking this app's
+   deliberate ZZZ-styled brand identity depending on the user's Telegram
+   theme; `colorScheme` light/dark, already handled before this stage, is
+   the one Telegram theme signal this app actually adopts outright).
+   `WebApp.viewportStableHeight` is exposed as `--tg-viewport-stable-height`
+   and preferred over `100%`/`100vh` for the body's `min-height` (`globals.css`)
+   — Telegram recommends this over `viewportHeight` (jitters during
+   keyboard/UI animations) and over CSS viewport units (unaware of
+   Telegram's own chrome). `WebApp.safeAreaInset`/`contentSafeAreaInset`
+   (Bot API 8.0+) are exposed as `--tg-safe-area-inset-*`/
+   `--tg-content-safe-area-inset-*` and preferred over the plain CSS
+   `env(safe-area-inset-*)` in `BottomNav`, via a CSS `var()` fallback
+   chain (`var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom))`)
+   — falls back cleanly outside Telegram or on older clients that don't
+   report it. All three subscribe to `WebApp.viewportChanged`
+   (feature-detected) to stay live. Every new WebApp API call added in
+   this stage is feature-detected before use, matching the existing
+   `HapticFeedback`/`BackButton` pattern. A real, pre-existing null-safety
+   bug in `getThemeParams()` was found and fixed along the way (returned
+   `undefined` — mistyped as `Record<string,string>` — whenever a
+   `WebApp` object existed but had no `themeParams` field; harmless before
+   this stage since nothing actually called it, but would have crashed
+   the moment a real caller iterated over the result, which
+   `applyThemeParams()` now does).
+6. **Diagnostics logging** — see 10.3 below.
+7. **Tests** — see 10.4 below.
+
+### 10.2 Secure fallback authentication: the Telegram Login Widget
+
+Researched against Telegram's official Login Widget documentation
+(https://core.telegram.org/widgets/login). This is a **completely
+separate protocol** from Mini App `initData`, with a **different
+secret-key derivation** — mixing the two up would silently break
+verification (or worse, invite a cross-protocol confusion bug):
+
+- Mini App initData: `secret_key = HMAC_SHA256(key="WebAppData", data=bot_token)`
+- Login Widget: `secret_key = SHA256(bot_token)` — a **plain digest**, used directly as the HMAC key
+
+Implemented as genuinely separate code end-to-end, never sharing a
+verification function with the Mini App path:
+
+- `src/lib/telegram/verify-login-widget.ts` — the Login Widget's own HMAC
+  check, `auth_date` freshness window, constant-time hash comparison.
+  Explicitly tested (`verify-login-widget.test.ts`) to confirm a
+  Mini-App-style hash does **not** validate here, and vice versa (proven
+  the two protocols can't be confused for each other).
+- `src/lib/auth/login-nonce.ts` — the CSRF defense. The Login Widget
+  protocol itself has **no state/nonce passthrough** — its callback
+  payload is exactly Telegram's own fixed field set (`id`, `first_name`,
+  ..., `hash`), nothing app-supplied can ride along with it. So the CSRF
+  defense lives one layer up: `GET /api/auth/telegram-login/nonce` mints
+  a random nonce, hands the raw value to the client (to echo back in its
+  POST body) and a **signed** copy (HMAC'd with `SESSION_SECRET` — this
+  is the "reserved for a future signed-cookie/session-secret need" env
+  var from Stage 2, now genuinely used for exactly that) to an HttpOnly,
+  5-minute-TTL cookie. `POST /api/auth/telegram-login/verify` requires
+  the two to match — a cross-origin attacker page can neither read nor
+  forge our HttpOnly cookie, nor guess the random nonce, so it cannot
+  construct a request that passes. This is the classic double-submit-
+  cookie pattern, made self-verifying (no server-side nonce store needed
+  for a short-lived, rarely-used fallback path). **Honest security
+  property**: this defeats cross-origin CSRF (the actual threat model
+  asked for) — it is not a replay-proof single-use token store; a party
+  that already has HttpOnly-cookie access (e.g. via XSS) could resubmit
+  within the 5-minute TTL, but that's beyond what CSRF protection covers,
+  and the underlying Telegram-signed payload's own `auth_date` freshness
+  check adds a second, independent time bound regardless.
+- `src/server/services/auth-service.ts`,
+  `authenticateWithTelegramLoginWidget()` — a distinct function (not a
+  branch inside the existing `authenticateWithTelegram`), throwing its
+  own `LoginWidgetAuthError` (distinct from `AuthError`), verifying the
+  nonce **before** even looking at the Telegram signature (fail fast on
+  the cheaper check), then reusing the exact same
+  `upsertUserFromTelegram`/`createSession` repository calls the Mini App
+  path uses — one real session, one real user row, no parallel/shadow
+  user model for "web-login users."
+- `src/app/api/auth/telegram-login/nonce/route.ts` and
+  `.../verify/route.ts` — fail closed (503) if `SESSION_SECRET` isn't
+  configured, never fall open; the verify route always clears the nonce
+  cookie (success or failure) so it's never reusable from that browser
+  again.
+- `src/components/auth/telegram-login-widget.tsx` — renders the official
+  widget script (`telegram-widget.js`), wires its `data-onauth` JS
+  callback to fetch the nonce first, then POST to the verify endpoint.
+  Renders nothing if `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` isn't
+  configured — the fallback is simply unavailable, never a broken UI
+  element.
+- Shown **only** when `authFailureCategory` is `EMPTY_INIT_DATA` or
+  `NO_TELEGRAM` (`src/app/page.tsx`) — never for a rejected signature or
+  a backend failure, where a second login method wouldn't help and could
+  mislead the user into thinking it would.
+- **Verified live**, end-to-end, against a real local Postgres database
+  (not just unit tests): minted a real nonce, built a genuinely
+  HMAC-signed Login Widget payload, verified it creates a real session
+  and a real user row; replaying the same request after the nonce cookie
+  was cleared → 403; a validly-signed Telegram payload submitted with
+  **no** nonce cookie at all (the actual CSRF shape — a forged
+  cross-origin request) → 403. The primary Mini App `initData` path was
+  re-verified live afterward to confirm zero regression.
+
+### 10.3 Diagnostics logging
+
+`POST /api/diagnostics/auth` (`src/app/api/diagnostics/auth/route.ts`) —
+unauthenticated (fires before login can succeed in the failure cases this
+exists for), logs one structured line per launch/auth attempt:
+`platform`, `webAppVersion`, `initDataPresent`, `launchPath`,
+`authFailureCategory`. The Zod schema (`authDiagnosticEventSchema`,
+`.strict()`) **is** the privacy guarantee, not a convention to remember:
+there is no field for `initData`/`hash`/`token`/user payload/cookies, and
+an unlisted field is rejected outright rather than silently dropped —
+nothing sensitive can reach this log line even by future-developer
+mistake. Verified live: the log line that actually appears in the server
+log is exactly the five allow-listed fields, nothing else. Client side,
+`reportAuthDiagnostic()` (`src/lib/telegram/diagnostics-log.ts`) is a
+fire-and-forget `fetch()` — never throws into the caller, never blocks
+the auth flow.
+
+### 10.4 Tests added
+
+66 new tests across 9 new/extended files:
+`verify-login-widget.test.ts` (10), `login-nonce.test.ts` (10),
+`diagnostics.test.ts` (12), `webapp.test.ts` (+20, bounded polling +
+feature-detection hardening), `auth-service.test.ts` (11, new file —
+this was the first direct test coverage for `authenticateWithTelegram`
+itself, not just its route), `telegram-login/nonce/route.test.ts` (3),
+`telegram-login/verify/route.test.ts` (10), `diagnostics/auth/route.test.ts`
+(7), `telegram-login-widget.test.tsx` (7), `auth-provider.test.tsx` (10,
+new file), `theme-provider.test.tsx` (7, new file), `page.test.tsx` (7,
+new file). Every explicitly-requested scenario is covered: delayed
+Telegram object initialization, Telegram object present with empty
+initData, valid initData, invalid initData, browser fallback login,
+state/nonce rejection, session creation after fallback login, and
+unsupported methods/old WebApp versions.
+
+### 10.5 Files changed
+
+New: `src/lib/telegram/diagnostics.ts` (+test),
+`src/lib/telegram/diagnostics-log.ts`,
+`src/lib/telegram/verify-login-widget.ts` (+test),
+`src/lib/auth/login-nonce.ts` (+test),
+`src/lib/api/error-logging.ts` (extracted from the Stage 7 auth-route fix,
+now shared),
+`src/app/api/auth/telegram-login/nonce/route.ts` (+test),
+`src/app/api/auth/telegram-login/verify/route.ts` (+test),
+`src/app/api/diagnostics/auth/route.ts` (+test),
+`src/components/auth/telegram-login-widget.tsx` (+test),
+`src/server/services/auth-service.test.ts`,
+`src/components/providers/auth-provider.test.tsx`,
+`src/components/providers/theme-provider.test.tsx`,
+`src/app/page.test.tsx`.
+Modified: `src/types/telegram.d.ts` (`isVersionAtLeast`, `safeAreaInset`,
+`contentSafeAreaInset`), `src/lib/telegram/webapp.ts` (bounded polling,
+feature-detection hardening, viewport/safe-area accessors, the
+`getThemeParams` null-safety fix), `src/lib/validation/auth.ts` (Login
+Widget + diagnostics schemas), `src/server/services/auth-service.ts`
+(`authenticateWithTelegramLoginWidget`), `src/app/api/auth/telegram/route.ts`
+(now uses the shared `error-logging.ts`), `src/components/providers/auth-provider.tsx`
+(full rewrite — bounded wait, categorization, diagnostics, the widget
+completion path), `src/components/providers/theme-provider.tsx` (theme/
+viewport/safe-area CSS vars), `src/app/page.tsx` (differentiated error UI
++ fallback widget), `src/app/layout.tsx` (`next/script` `beforeInteractive`),
+`src/app/globals.css`, `src/components/navigation/bottom-nav.tsx`,
+`.env.example`.
+
+### 10.6 What's fundamentally client-dependent (no code fix possible)
+
+- **Whether a given unofficial client populates `initData` at all.**
+  Nothing server- or app-side can make a client send data it was never
+  built to send — the bounded wait only helps with *timing* (late
+  population), not a client that never populates it under any
+  circumstance. For those, the web-login fallback is the only path, by
+  design.
+- **Whether `WebApp.viewportStableHeight`/`safeAreaInset`/
+  `isVersionAtLeast`/etc. exist at all** — purely a function of which Bot
+  API version a given client implements. Every accessor added in this
+  stage degrades gracefully (returns `null`/`false`) rather than throws,
+  but a client on an old Bot API version simply doesn't get the improved
+  behavior; there's no polyfill for a native platform API that isn't there.
+- **The Telegram Desktop/`web.telegram.org` iframe third-party-cookie
+  risk** (flagged in Stage 7, Section 9.2) — unrelated to this stage's
+  changes, still an open, documented risk for the primary Mini App path
+  specifically (not the web-login fallback, which is a normal top-level
+  page navigation with no iframe involved).
+- **A client that lies about its own platform/version fields** — those
+  are read for diagnostics/UI-adaptation only, never for authentication,
+  so a dishonest client can at most get a slightly wrong loading-skeleton
+  cosmetic treatment, never a security bypass.
+
+### 10.7 BotFather configuration this stage adds
+
+On top of the Section 9.5 checklist, going live with the web-login
+fallback specifically needs:
+
+- [ ] `/setdomain` with [@BotFather](https://t.me/BotFather), pointing at the exact HTTPS domain the Login Widget is served from — Telegram validates the widget's origin against this before it will render/authorize anything. (Already listed in 9.5 item 3; this is what it was anticipating.)
+- [ ] Set `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (no `@`) to the same bot as `TELEGRAM_BOT_TOKEN`.
+- [ ] Set `SESSION_SECRET` to a real random value in production — without it, `GET /api/auth/telegram-login/nonce` 503s and the fallback is simply unavailable (the primary Mini App path is unaffected either way).
+- [ ] Both are optional — omit either to leave the fallback disabled entirely if it isn't wanted yet.

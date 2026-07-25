@@ -1,6 +1,7 @@
 "use client";
 
-import { useAuth } from "@/components/providers/auth-provider";
+import { useAuth, type AuthFailureCategory } from "@/components/providers/auth-provider";
+import { TelegramLoginWidget } from "@/components/auth/telegram-login-widget";
 
 const ERROR_MESSAGES: Record<string, string> = {
   SIGNATURE_MISMATCH: "Не удалось подтвердить подлинность запуска из Telegram.",
@@ -8,6 +9,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   MISSING_INIT_DATA: "Приложение нужно открыть через Telegram.",
   SERVER_MISCONFIGURED: "Сервер временно недоступен. Попробуйте позже.",
 };
+
+/**
+ * Required exact message (localized — the rest of this app's UI is
+ * Russian throughout): "This Telegram client did not provide secure
+ * authorization data. Open the app in the official Telegram client or
+ * use secure web login."
+ */
+const EMPTY_INIT_DATA_MESSAGE =
+  "Этот клиент Telegram не передал безопасные данные авторизации. Откройте приложение в официальном клиенте Telegram или используйте безопасный вход через браузер.";
 
 function HomeSkeleton() {
   return (
@@ -19,8 +29,27 @@ function HomeSkeleton() {
   );
 }
 
-function HomeError({ code, onRetry }: { code: string | null; onRetry: () => void }) {
-  const message = (code && ERROR_MESSAGES[code]) || "Не удалось войти. Попробуйте ещё раз.";
+/** Fallback login is only offered when it can plausibly help: WebApp missing, or present-but-empty initData. Never for a rejected/expired signature or a backend failure — those aren't fixed by logging in a second way. */
+function showsLoginWidgetFallback(category: AuthFailureCategory | null): boolean {
+  return category === "EMPTY_INIT_DATA" || category === "NO_TELEGRAM";
+}
+
+function HomeError({
+  code,
+  category,
+  onRetry,
+  onLoginWidgetAuthenticated,
+}: {
+  code: string | null;
+  category: AuthFailureCategory | null;
+  onRetry: () => void;
+  onLoginWidgetAuthenticated: () => void;
+}) {
+  const message =
+    category === "EMPTY_INIT_DATA"
+      ? EMPTY_INIT_DATA_MESSAGE
+      : (code && ERROR_MESSAGES[code]) || "Не удалось войти. Попробуйте ещё раз.";
+
   return (
     <div className="flex flex-col items-center gap-4 px-6 pt-24 text-center">
       <div className="h-16 w-16 rounded-2xl bg-accent-red/10" />
@@ -32,15 +61,33 @@ function HomeError({ code, onRetry }: { code: string | null; onRetry: () => void
       >
         Повторить
       </button>
+      {showsLoginWidgetFallback(category) && (
+        <div className="mt-2 flex flex-col items-center gap-2 border-t border-border pt-4">
+          <p className="text-xs text-muted">Или войдите через браузер:</p>
+          <TelegramLoginWidget
+            onAuthenticated={onLoginWidgetAuthenticated}
+            onError={() => undefined}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 export default function HomePage() {
-  const { status, user, errorCode, retry } = useAuth();
+  const { status, user, errorCode, authFailureCategory, retry, completeLoginWidgetAuth } = useAuth();
 
   if (status === "loading") return <HomeSkeleton />;
-  if (status === "error") return <HomeError code={errorCode} onRetry={retry} />;
+  if (status === "error") {
+    return (
+      <HomeError
+        code={errorCode}
+        category={authFailureCategory}
+        onRetry={retry}
+        onLoginWidgetAuthenticated={completeLoginWidgetAuth}
+      />
+    );
+  }
 
   const displayName = user?.firstName || user?.username || "проксёр";
 

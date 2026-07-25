@@ -19,7 +19,12 @@ export function BottomNav() {
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      // --tg-safe-area-inset-bottom (ThemeProvider, via WebApp.safeAreaInset)
+      // is Telegram's own reported inset, preferred when present since it
+      // accounts for Telegram's in-app chrome, not just the OS's. Falls
+      // back to the plain CSS env() value outside Telegram or on older
+      // clients that don't report it.
+      style={{ paddingBottom: "var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom))" }}
       aria-label="Основная навигация"
     >
       <ul className="mx-auto flex max-w-lg items-stretch justify-between px-1">
