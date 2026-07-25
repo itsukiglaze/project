@@ -1,15 +1,65 @@
 "use client";
 
+import Link from "next/link";
 import { BannerFamily, type BannerConfig } from "@/config/gacha";
 import { calculateRemainingToHardPityFor } from "@/lib/gacha-math";
 import type { BannerStateFieldsState } from "./types";
+import { getMechanismLabel } from "./types";
+import type { SavedPityState } from "./use-saved-profile-snapshot";
 import { NumericField } from "./numeric-field";
 import { SourceModeToggle } from "./source-mode-toggle";
+import { StepSection } from "./step-section";
 
 function parsedPityOrNull(raw: string, hardPity: number): number | null {
   if (!/^\d+$/.test(raw.trim())) return null;
   const value = Number(raw.trim());
   return value >= 0 && value < hardPity ? value : null;
+}
+
+/** "Сначала сохраните … в настройках или выберите «Ввести вручную»." — shared copy with ResourceFields' fallback. */
+function SavedDataFallback({ what }: { what: string }) {
+  return (
+    <div className="space-y-2 rounded-xl border border-accent-orange/40 bg-accent-orange/10 p-3">
+      <p className="text-xs font-medium text-foreground">
+        Сначала сохраните {what} в настройках или выберите «Ввести вручную».
+      </p>
+      <Link
+        href="/settings"
+        className="inline-block min-h-11 rounded-lg bg-surface-contrast px-3 py-2 text-xs font-semibold text-background"
+      >
+        Перейти в настройки
+      </Link>
+    </div>
+  );
+}
+
+/** The one-line guarantee-state sentence, shared between saved and manual-preview display. */
+function GuaranteeStateLine({
+  family,
+  config,
+  guaranteeActive,
+}: {
+  family: BannerFamily;
+  config: BannerConfig;
+  guaranteeActive: boolean;
+}) {
+  if (config.selectedTargetAlways) {
+    return <p className="text-xs text-muted">Выбранный Bangboo гарантирован при каждом S-ранге.</p>;
+  }
+  if (family === BannerFamily.STABLE) {
+    return (
+      <p className="text-xs text-muted">
+        Гарантирован любой S-ранг — конкретная цель здесь не гарантируется.
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-muted">
+      {guaranteeActive
+        ? "Следующий S-ранг гарантированно целевой."
+        : `Следующий S-ранг участвует в ${getMechanismLabel(config)}.`}
+    </p>
+  );
 }
 
 export function PityFields({
@@ -21,6 +71,7 @@ export function PityFields({
   errors,
   onChange,
   onToggleGuarantee,
+  savedState,
 }: {
   family: BannerFamily;
   config: BannerConfig;
@@ -30,22 +81,47 @@ export function PityFields({
   errors: Record<string, string>;
   onChange: (field: "sRankPity" | "aRankPity", value: string) => void;
   onToggleGuarantee: () => void;
+  savedState: SavedPityState;
 }) {
   const previewPity = useSaved ? null : parsedPityOrNull(values.sRankPity, config.hardPityS);
   const remaining =
     previewPity !== null ? calculateRemainingToHardPityFor(config, previewPity) : null;
 
   return (
-    <section className="space-y-3 rounded-2xl border border-border bg-surface p-4">
-      <h2 className="text-sm font-bold">Текущее состояние pity</h2>
-      <SourceModeToggle useSaved={useSaved} onChange={onUseSavedChange} />
+    <StepSection step={3} title="Какое состояние pity использовать?">
+      <SourceModeToggle
+        useSaved={useSaved}
+        onChange={onUseSavedChange}
+        savedLabel="Сохранённое pity"
+        temporaryLabel="Ввести вручную"
+        groupName={`${family}-pity-source`}
+      />
 
       {useSaved ? (
-        <p className="text-xs text-muted">
-          Будет использовано сохранённое состояние pity из вашего профиля на момент расчёта.
-        </p>
+        savedState.status === "loading" ? (
+          <p className="text-xs text-muted">Загружаем сохранённое pity…</p>
+        ) : savedState.status === "available" ? (
+          <div className="space-y-2 rounded-xl border border-border bg-background/40 p-3">
+            <p className="text-xs">
+              <span className="text-muted">Текущее pity: </span>
+              <span className="font-semibold text-foreground">
+                {savedState.snapshot.sRankPity} из {config.hardPityS}
+              </span>
+            </p>
+            <GuaranteeStateLine
+              family={family}
+              config={config}
+              guaranteeActive={savedState.snapshot.guaranteeActive}
+            />
+          </div>
+        ) : (
+          <SavedDataFallback what="pity" />
+        )
       ) : (
         <div className="space-y-3">
+          <p className="text-xs text-muted">
+            Сколько круток прошло с последнего S-ранга и A-ранга на этом канале.
+          </p>
           <div className="grid grid-cols-2 gap-3">
             <NumericField
               id={`${family}-s-rank-pity`}
@@ -93,6 +169,6 @@ export function PityFields({
           )}
         </div>
       )}
-    </section>
+    </StepSection>
   );
 }

@@ -60,4 +60,29 @@ describe("CalculationResult", () => {
     render(<CalculationResult data={BASE} config={EXCLUSIVE_CONFIG} stale />);
     expect(screen.getByText(/параметры изменены/i)).toBeInTheDocument();
   });
+
+  it("distinguishes 'already available' from 'additional needed' with clear group headers", () => {
+    render(<CalculationResult data={BASE} config={EXCLUSIVE_CONFIG} stale={false} />);
+    expect(screen.getByText("Уже есть")).toBeInTheDocument();
+    expect(screen.getByText("Нужно дополнительно")).toBeInTheDocument();
+    expect(screen.getByText(/гарантированный расчёт/i)).toBeInTheDocument();
+  });
+
+  it("shows an explicit 'already achievable' badge when missingPulls is 0, and hides the 'additional needed' group", () => {
+    const achievable: GuaranteedCalculationResult = { ...BASE, missingPulls: 0, missingPolychrome: 0 };
+    render(<CalculationResult data={achievable} config={EXCLUSIVE_CONFIG} stale={false} />);
+    expect(screen.getByText(/цель уже достижима с имеющимися ресурсами/i)).toBeInTheDocument();
+    expect(screen.queryByText("Нужно дополнительно")).not.toBeInTheDocument();
+  });
+
+  it("does not show the 'already achievable' badge when additional pulls are still needed", () => {
+    render(<CalculationResult data={BASE} config={EXCLUSIVE_CONFIG} stale={false} />);
+    expect(screen.queryByText(/цель уже достижима/i)).not.toBeInTheDocument();
+  });
+
+  it("labels the assumptions list so it isn't unexplained bullet text", () => {
+    render(<CalculationResult data={BASE} config={EXCLUSIVE_CONFIG} stale={false} />);
+    expect(screen.getByText("Предположения расчёта")).toBeInTheDocument();
+    expect(screen.getByText("Гарантированный худший сценарий при hard pity 90.")).toBeInTheDocument();
+  });
 });

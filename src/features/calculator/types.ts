@@ -8,6 +8,22 @@ export const ALL_FAMILIES: BannerFamily[] = [
   BannerFamily.BANGBOO,
 ];
 
+/**
+ * S0–S6 is specifically the character-duplicate convention (S0 = the
+ * character itself, S1–S6 = duplicate ranks 1–6) — it does not describe a
+ * W-Engine or a Bangboo. Internally this is still exactly the same 1–7
+ * `targetCopies` count either way (S0=1, S1=2, …, S6=7); only the label
+ * differs. Shared between goal-fields.tsx (the chip control) and the
+ * calculation summary, so both describe the same goal identically.
+ */
+export function isCharacterBanner(family: BannerFamily): boolean {
+  return family === BannerFamily.EXCLUSIVE_AGENT;
+}
+
+export function goalChipLabel(family: BannerFamily, copies: number): string {
+  return isCharacterBanner(family) ? `S${copies - 1}` : `Копия ${copies}`;
+}
+
 /** UI copy only — no game-balance numbers live here, those all come from config/gacha.ts. */
 export const FAMILY_LABELS: Record<BannerFamily, string> = {
   [BannerFamily.EXCLUSIVE_AGENT]: "Эксклюзивный агент",
@@ -22,6 +38,38 @@ export const CURRENCY_LABELS: Record<PullCurrency, string> = {
   [PullCurrency.BOOPON]: "Boopon",
 };
 
+/**
+ * "featured / off-banner" split as a "50/50"-style string, purely for
+ * display — derived from the existing `featuredBaseChance` config value
+ * (previously stored but never rendered anywhere). Only meaningful for
+ * families with a real featured-vs-off-banner split; callers must check
+ * that first (see getMechanismLabel).
+ */
+function formatFeaturedSplit(featuredBaseChance: number): string {
+  const featuredPercent = Math.round(featuredBaseChance * 100);
+  return `${featuredPercent}/${100 - featuredPercent}`;
+}
+
+/**
+ * Compact "Механика: …" line shown under the selected banner — one banner
+ * family's actual mechanism, not a generic reused phrase. Exclusive Agent
+ * and W-Engine have DIFFERENT featured/off-banner splits (50/50 vs
+ * 75/25); this must read that from config per family, never hard-code
+ * "50/50" for both.
+ */
+export function getMechanismLabel(config: BannerConfig): string {
+  if (config.selectedTargetAlways) {
+    return "выбранная цель гарантирована";
+  }
+  if (config.family === BannerFamily.STABLE) {
+    return "любой S-ранг, без гарантии цели";
+  }
+  if (config.guaranteeAfterOffBanner && config.featuredBaseChance !== null) {
+    return formatFeaturedSplit(config.featuredBaseChance);
+  }
+  return "гарантия цели не предусмотрена";
+}
+
 /** Derives a one-line guarantee summary purely from config values. */
 export function getGuaranteeSummary(config: BannerConfig): string {
   if (config.family === BannerFamily.STABLE) {
@@ -30,8 +78,8 @@ export function getGuaranteeSummary(config: BannerConfig): string {
   if (config.selectedTargetAlways) {
     return "Выбранный Bangboo гарантирован при каждом S-ранге этого канала.";
   }
-  if (config.guaranteeAfterOffBanner) {
-    return "После проигранного 50/50 следующий S-ранг гарантированно целевой.";
+  if (config.guaranteeAfterOffBanner && config.featuredBaseChance !== null) {
+    return `После проигранного ${formatFeaturedSplit(config.featuredBaseChance)} следующий S-ранг гарантированно целевой.`;
   }
   return "Гарантия конкретной цели не предусмотрена.";
 }
@@ -43,6 +91,7 @@ export function getFamilyDisplayInfo(family: BannerFamily) {
     label: FAMILY_LABELS[family],
     hardPityS: config.hardPityS,
     currencyLabel: CURRENCY_LABELS[config.currency],
+    mechanismLabel: getMechanismLabel(config),
     guaranteeSummary: getGuaranteeSummary(config),
   };
 }

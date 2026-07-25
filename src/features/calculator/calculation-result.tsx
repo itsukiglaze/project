@@ -12,6 +12,15 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function ResultGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</h3>
+      <div className="grid grid-cols-2 gap-3">{children}</div>
+    </div>
+  );
+}
+
 export function CalculationResult({
   data,
   config,
@@ -30,6 +39,12 @@ export function CalculationResult({
   // game rules.
   const showMissingPolychrome =
     data.missingPolychrome !== null && config.currency !== PullCurrency.BOOPON;
+
+  // "Уже достижимо" — the target is reachable with what's already
+  // available, no additional pulls needed. Purely a display grouping
+  // decision derived from the existing missingPulls field — no new
+  // calculation.
+  const alreadyAchievable = data.missingPulls === 0;
 
   return (
     <section className="space-y-3 rounded-2xl border border-border bg-surface p-4">
@@ -52,26 +67,49 @@ export function CalculationResult({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      {alreadyAchievable && (
+        <p
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-accent-yellow/50 bg-accent-yellow/10 px-3 py-2 text-xs font-semibold text-foreground"
+        >
+          <span aria-hidden="true">✓</span>
+          Цель уже достижима с имеющимися ресурсами — дополнительные крутки не нужны.
+        </p>
+      )}
+
+      <ResultGroup title="Уже есть">
         <Stat label="Доступно круток" value={data.availablePulls} />
-        <Stat label="Нужно (худший случай)" value={data.totalRequiredPulls ?? "—"} />
-        <Stat label="Не хватает круток" value={data.missingPulls} />
-        {showMissingPolychrome && (
-          <Stat label="Не хватает полихромов" value={data.missingPolychrome as number} />
-        )}
         <Stat label="Остаток полихромов" value={data.leftoverPolychrome} />
+      </ResultGroup>
+
+      {!alreadyAchievable && (
+        <ResultGroup title="Нужно дополнительно">
+          <Stat label="Не хватает круток" value={data.missingPulls} />
+          {showMissingPolychrome && (
+            <Stat label="Не хватает полихромов" value={data.missingPolychrome as number} />
+          )}
+        </ResultGroup>
+      )}
+
+      <ResultGroup title="Гарантированный расчёт (худший случай)">
+        <Stat label="Нужно (худший случай)" value={data.totalRequiredPulls ?? "—"} />
         <Stat label="Первая копия" value={data.firstTargetCost ?? "—"} />
         {data.additionalTargetCost !== null && (
           <Stat label="Каждая доп. копия" value={data.additionalTargetCost} />
         )}
-      </div>
+      </ResultGroup>
 
       {data.explanation.length > 0 && (
-        <ul className="list-disc space-y-1 pl-4 text-xs text-muted">
-          {data.explanation.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
+        <div className="space-y-1">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Предположения расчёта
+          </h3>
+          <ul className="list-disc space-y-1 pl-4 text-xs text-muted">
+            {data.explanation.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

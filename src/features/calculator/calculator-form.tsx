@@ -4,10 +4,14 @@ import { BannerFamilySelector } from "./banner-family-selector";
 import { ResourceFields } from "./resource-fields";
 import { PityFields } from "./pity-fields";
 import { GoalFields } from "./goal-fields";
+import { CalculationSummary, getSubmitBlockReason } from "./calculation-summary";
 import { CalculationResult } from "./calculation-result";
 import { UnsupportedResult } from "./unsupported-result";
 import { CalculationError } from "./calculation-error";
 import { useCalculatorForm } from "./use-calculator-form";
+import { useSavedProfileSnapshot } from "./use-saved-profile-snapshot";
+import { hasClientFieldErrors } from "./build-request";
+import { useAuth } from "@/components/providers/auth-provider";
 
 export function CalculatorForm() {
   const {
@@ -29,6 +33,20 @@ export function CalculatorForm() {
     submit,
   } = useCalculatorForm();
 
+  const { status: authStatus } = useAuth();
+  const savedProfile = useSavedProfileSnapshot(authStatus === "authenticated");
+  const resourcesState = savedProfile.resources;
+  const pityState = savedProfile.getPity(activeFamily);
+
+  const blockReason = getSubmitBlockReason({
+    hasFieldErrors: hasClientFieldErrors(clientFieldErrors),
+    useSavedResources: formState.useSavedResources,
+    resourcesState,
+    useSavedBannerState: formState.useSavedBannerState,
+    pityState,
+  });
+  const disabled = !canSubmit || blockReason !== null;
+
   return (
     <div className="space-y-4 p-4 pt-6">
       <header>
@@ -49,6 +67,7 @@ export function CalculatorForm() {
         errors={clientFieldErrors}
         onChange={updateResourceField}
         onToggleIncludeMonochrome={toggleIncludeMonochrome}
+        savedState={resourcesState}
       />
 
       <PityFields
@@ -60,6 +79,7 @@ export function CalculatorForm() {
         errors={clientFieldErrors}
         onChange={updateBannerStateField}
         onToggleGuarantee={toggleGuaranteeActive}
+        savedState={pityState}
       />
 
       <GoalFields
@@ -69,14 +89,30 @@ export function CalculatorForm() {
         error={clientFieldErrors.targetCopies}
       />
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!canSubmit}
-        className="min-h-11 w-full rounded-xl bg-accent-yellow text-sm font-bold text-black disabled:opacity-40"
-      >
-        {isSubmitting ? "Считаем…" : "Рассчитать"}
-      </button>
+      <div className="space-y-2 rounded-2xl border border-border bg-surface p-4">
+        <CalculationSummary
+          family={activeFamily}
+          config={config}
+          formState={formState}
+          pityState={pityState}
+        />
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={disabled}
+          aria-describedby={blockReason ? "calculator-block-reason" : undefined}
+          className="min-h-11 w-full rounded-xl bg-accent-yellow text-sm font-bold text-black disabled:opacity-40"
+        >
+          {isSubmitting ? "Считаем…" : "Рассчитать"}
+        </button>
+
+        {blockReason && (
+          <p id="calculator-block-reason" className="text-xs text-accent-red">
+            {blockReason}
+          </p>
+        )}
+      </div>
 
       {uiState.status === "calculated" && (
         <CalculationResult data={uiState.data} config={config} stale={uiState.stale} />
