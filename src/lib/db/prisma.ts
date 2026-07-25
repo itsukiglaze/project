@@ -14,12 +14,46 @@ declare global {
   var __prisma: PrismaClient | undefined;
 }
 
+/**
+ * `pg` only negotiates TLS if the connection string itself carries
+ * `sslmode=require` (or similar) as a query param — otherwise it attempts
+ * a PLAINTEXT connection. Managed Postgres providers (Supabase — this
+ * project's documented deployment target — RDS, Neon, etc.) enforce TLS on
+ * both their pooled and direct endpoints; a plaintext handshake is
+ * rejected outright, and `pg` throws a raw connection error at query time,
+ * not at import time. That error is a plain Error/AggregateError, not an
+ * AuthError, so it looked like a mysterious "unexpected error" on the
+ * first request that actually touched the database (e.g. the very first
+ * login) rather than an obvious "can't connect to DB" failure — nothing
+ * before that point (routing, Zod validation, the Telegram HMAC check)
+ * touches the database at all, so everything up to here worked.
+ *
+ * Force TLS for any non-local host so this doesn't depend on the operator
+ * remembering to embed `sslmode=require` in DATABASE_URL/DIRECT_URL.
+ * `rejectUnauthorized: false` matches Prisma's own documented guidance for
+ * Supabase — its certificate chain isn't always in every runtime's default
+ * trust store. Local development against a plain, non-TLS Postgres (the
+ * usual local setup) is left untouched.
+ */
+function resolveSslConfig(connectionString: string): { rejectUnauthorized: boolean } | undefined {
+  let host: string;
+  try {
+    host = new URL(connectionString).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return undefined;
+  }
+  return { rejectUnauthorized: false };
+}
+
 function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
   }
-  const adapter = new PrismaPg({ connectionString });
+  const adapter = new PrismaPg({ connectionString, ssl: resolveSslConfig(connectionString) });
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],

@@ -28,6 +28,34 @@ function hashIp(ip: string | null): string | null {
   return createHash("sha256").update(ip).digest("hex");
 }
 
+/**
+ * `console.error("...", err)` alone can render as just the string message
+ * in Vercel's collapsed log view, hiding exactly the detail needed to
+ * diagnose a production-only failure (e.g. a DB connection error, which
+ * is a plain Error/AggregateError, not an AuthError). Pull out every field
+ * that matters into one flat, always-expanded log line: message, stack,
+ * and — duck-typed, since importing Prisma's error classes here isn't
+ * worth the coupling — any `code`/`errorCode`/`meta`/`clientVersion`
+ * Prisma error classes attach (PrismaClientKnownRequestError,
+ * PrismaClientInitializationError, etc.).
+ */
+function describeError(err: unknown): Record<string, unknown> {
+  if (!(err instanceof Error)) {
+    return { value: err };
+  }
+  const record = err as unknown as Record<string, unknown>;
+  return {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+    ...(typeof record.code !== "undefined" ? { code: record.code } : {}),
+    ...(typeof record.errorCode !== "undefined" ? { errorCode: record.errorCode } : {}),
+    ...(typeof record.meta !== "undefined" ? { meta: record.meta } : {}),
+    ...(typeof record.clientVersion !== "undefined" ? { clientVersion: record.clientVersion } : {}),
+    ...(err.cause ? { cause: describeError(err.cause) } : {}),
+  };
+}
+
 export async function POST(request: NextRequest) {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
@@ -81,7 +109,7 @@ export async function POST(request: NextRequest) {
         "Не удалось подтвердить вход через Telegram.",
       );
     }
-    console.error("auth/telegram: unexpected error", err);
+    console.error("auth/telegram: unexpected error", JSON.stringify(describeError(err)));
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");
   }
 }
