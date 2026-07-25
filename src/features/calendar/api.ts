@@ -1,99 +1,33 @@
-import type { BannerFamily } from "@/config/gacha";
-import type {
-  CurrencyType,
-  IncomeSource,
-  LocalDate,
-  RecurrenceEndType,
-  RecurrenceFrequency,
-  RecurringTransactionType,
-  TransactionType,
-} from "@/lib/calendar-math";
+import type { LocalDate } from "@/lib/calendar-math";
 import { formatLocalDate } from "@/lib/calendar-math";
 
-export type RecurrenceRuleDto = {
-  frequency: RecurrenceFrequency;
-  interval: number;
-  daysOfWeek: number[];
-  dayOfMonth: number | null;
-  startDate: string; // "YYYY-MM-DD"
-  endType: RecurrenceEndType;
-  endDate: string | null;
-  occurrenceCount: number | null;
-};
-
-export type SeriesTemplateDto = {
-  type: RecurringTransactionType;
-  currencyType: CurrencyType | null;
-  amount: number;
-  source: IncomeSource | null;
-  bannerFamily: BannerFamily | null;
-  note: string | null;
-};
-
-export type SeriesRecordDto = SeriesTemplateDto & {
-  id: string;
-  rule: RecurrenceRuleDto;
-  timezone: string;
-  isActive: boolean;
-  splitFromSeriesId: string | null;
-  version: number;
-};
-
-export type ExceptionInputDto = {
-  isCancelled: boolean;
-  amountOverride: number | null;
-  currencyTypeOverride: CurrencyType | null;
-  sourceOverride: IncomeSource | null;
-  bannerFamilyOverride: BannerFamily | null;
-  noteOverride: string | null;
-};
-
-export type ExceptionRecordDto = ExceptionInputDto & {
-  seriesId: string;
-  occurrenceDate: string;
-  version: number;
-};
-
-export type TransactionInputDto = {
-  localDate: string;
-  type: TransactionType;
-  currencyType: CurrencyType | null;
-  amount: number;
-  source: IncomeSource | null;
-  bannerFamily: BannerFamily | null;
-  note: string | null;
-  timezone: string;
-};
-
-export type TransactionRecordDto = TransactionInputDto & {
-  id: string;
-  seriesId: string | null;
-  occurrenceDate: string | null;
-  version: number;
-};
-
-export type MergedOccurrenceDto =
-  | ({ kind: "actual" } & Omit<TransactionRecordDto, "timezone">)
-  | ({ kind: "virtual" } & {
-      seriesId: string;
-      occurrenceDate: string;
-      type: RecurringTransactionType;
-      currencyType: CurrencyType | null;
-      amount: number;
-      source: IncomeSource | null;
-      bannerFamily: BannerFamily | null;
-      note: string | null;
-    });
-
-export type ForecastDto = {
-  requestedHorizonDays: number;
-  effectiveHorizonDays: number;
-  rangeStart: string;
-  rangeEnd: string;
-  occurrences: MergedOccurrenceDto[];
-  dailyBalances: Array<{ date: string; netChange: number; runningBalance: number }>;
-  projectedEndingBalance: number;
-};
+// The canonical wire-format DTOs live in src/lib/api/calendar-dto.ts — one
+// definition shared by the server routes (which serialize into this exact
+// shape) and this client module, so the two can never independently drift
+// out of sync the way they did before (see that file's own docs for the
+// LocalDate-serialization bug this fixed).
+import type {
+  ExceptionInputDto,
+  ExceptionRecordDto,
+  ForecastDto,
+  MergedOccurrenceDto,
+  RecurrenceRuleDto,
+  SeriesRecordDto,
+  SeriesTemplateDto,
+  TransactionInputDto,
+  TransactionRecordDto,
+} from "@/lib/api/calendar-dto";
+export type {
+  RecurrenceRuleDto,
+  SeriesTemplateDto,
+  SeriesRecordDto,
+  ExceptionInputDto,
+  ExceptionRecordDto,
+  TransactionInputDto,
+  TransactionRecordDto,
+  MergedOccurrenceDto,
+  ForecastDto,
+} from "@/lib/api/calendar-dto";
 
 // ---------------------------------------------------------------------------
 // Shared result / fetch plumbing — mirrors features/profile/api.ts and

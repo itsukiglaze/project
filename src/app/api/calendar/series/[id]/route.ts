@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { deleteSeriesRequestSchema, updateSeriesRequestSchema } from "@/lib/validation/calendar-series";
 import { calendarErrorResponse } from "@/lib/api/calendar-errors";
 import { apiError } from "@/lib/api/errors";
+import { serializeSeriesRecord } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { deleteEventSeries, updateEventSeries } from "@/server/services/calendar-event-series-service";
 
@@ -40,8 +41,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
   try {
     const result = await updateEventSeries(user.id, seriesId, input, expectedVersion, idempotencyKey);
-    if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    if (!result.ok) {
+      if (result.kind === "STALE_STATE") {
+        return calendarErrorResponse({ ...result, current: serializeSeriesRecord(result.current) });
+      }
+      return calendarErrorResponse(result);
+    }
+    return NextResponse.json({ ...result, record: serializeSeriesRecord(result.record) });
   } catch (err) {
     console.error("PUT /api/calendar/series/[id]: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");
@@ -68,8 +74,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       parsed.data.expectedVersion,
       parsed.data.idempotencyKey,
     );
-    if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    if (!result.ok) {
+      if (result.kind === "STALE_STATE") {
+        return calendarErrorResponse({ ...result, current: serializeSeriesRecord(result.current) });
+      }
+      return calendarErrorResponse(result);
+    }
+    return NextResponse.json({ ...result, record: serializeSeriesRecord(result.record) });
   } catch (err) {
     console.error("DELETE /api/calendar/series/[id]: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");

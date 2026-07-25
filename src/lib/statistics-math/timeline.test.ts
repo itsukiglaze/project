@@ -9,12 +9,17 @@ const RANGE_END = { year: 2026, month: 1, day: 17 };
 function actual(overrides: Partial<Extract<MergedOccurrence, { kind: "actual" }>> = {}): MergedOccurrence {
   return {
     kind: "actual",
+    id: "tx-1",
     seriesId: null,
     occurrenceDate: null,
     localDate: TODAY,
     type: TransactionType.INCOME,
     currencyType: CurrencyType.POLYCHROME,
     amount: 100,
+    source: IncomeSource.DAILY,
+    bannerFamily: null,
+    note: null,
+    version: 1,
     ...overrides,
   };
 }

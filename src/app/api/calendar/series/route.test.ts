@@ -19,6 +19,36 @@ import { GET, POST } from "./route";
 
 const USER = { id: "user-1" };
 
+/** A realistic SeriesRecord as returned by the service — rule dates are
+ * real LocalDate objects here, exactly like the real repository/service
+ * layer produces, so the route's serialization step has real work to do. */
+function seriesRecordFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "series-1",
+    type: "INCOME",
+    currencyType: "POLYCHROME",
+    amount: 60,
+    source: "DAILY",
+    bannerFamily: null,
+    note: null,
+    rule: {
+      frequency: "DAILY",
+      interval: 1,
+      daysOfWeek: [],
+      dayOfMonth: null,
+      startDate: { year: 2026, month: 1, day: 1 },
+      endType: "NEVER",
+      endDate: null,
+      occurrenceCount: null,
+    },
+    timezone: "Europe/Berlin",
+    isActive: true,
+    splitFromSeriesId: null,
+    version: 1,
+    ...overrides,
+  };
+}
+
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     type: "INCOME",
@@ -65,11 +95,35 @@ describe("POST /api/calendar/series", () => {
   });
 
   it("creates a series on valid input (200)", async () => {
-    mockCreateEventSeries.mockResolvedValue({ ok: true, record: { id: "series-1" }, replay: false });
+    mockCreateEventSeries.mockResolvedValue({ ok: true, record: seriesRecordFixture(), replay: false });
     const response = await POST(postRequest(validBody()));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.ok).toBe(true);
+  });
+
+  it("serializes the created record's LocalDate rule fields as YYYY-MM-DD strings, not {year,month,day} objects (true JSON round-trip)", async () => {
+    mockCreateEventSeries.mockResolvedValue({
+      ok: true,
+      record: seriesRecordFixture({
+        rule: {
+          frequency: "DAILY",
+          interval: 1,
+          daysOfWeek: [],
+          dayOfMonth: null,
+          startDate: { year: 2026, month: 3, day: 5 },
+          endType: "UNTIL_DATE",
+          endDate: { year: 2026, month: 12, day: 31 },
+          occurrenceCount: null,
+        },
+      }),
+      replay: false,
+    });
+    const response = await POST(postRequest(validBody()));
+    const body = await response.json();
+    expect(body.record.rule.startDate).toBe("2026-03-05");
+    expect(body.record.rule.endDate).toBe("2026-12-31");
+    expect(typeof body.record.rule.startDate).toBe("string");
   });
 
   it("never passes userId through to the service from the body — it always comes from the session", async () => {
@@ -143,12 +197,33 @@ describe("GET /api/calendar/series", () => {
   });
 
   it("lists active series for the current user only (read-only, no write mocks touched)", async () => {
-    mockListActiveSeriesForUser.mockResolvedValue([{ id: "series-1" }]);
+    mockListActiveSeriesForUser.mockResolvedValue([seriesRecordFixture()]);
     const response = await GET();
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.series).toHaveLength(1);
     expect(mockListActiveSeriesForUser).toHaveBeenCalledWith("user-1");
     expect(mockCreateEventSeries).not.toHaveBeenCalled();
+  });
+
+  it("serializes each series' rule.startDate/endDate as YYYY-MM-DD strings (true JSON round-trip)", async () => {
+    mockListActiveSeriesForUser.mockResolvedValue([
+      seriesRecordFixture({
+        rule: {
+          frequency: "MONTHLY",
+          interval: 1,
+          daysOfWeek: [],
+          dayOfMonth: 15,
+          startDate: { year: 2026, month: 6, day: 15 },
+          endType: "AFTER_COUNT",
+          endDate: null,
+          occurrenceCount: 12,
+        },
+      }),
+    ]);
+    const response = await GET();
+    const body = await response.json();
+    expect(body.series[0].rule.startDate).toBe("2026-06-15");
+    expect(body.series[0].rule.endDate).toBeNull();
   });
 });

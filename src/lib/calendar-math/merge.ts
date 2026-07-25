@@ -1,9 +1,18 @@
 import { compareLocalDate, formatLocalDate, type LocalDate } from "./local-date";
 import type { VirtualOccurrence } from "./exceptions";
-import type { CurrencyType, TransactionType } from "./types";
+import type { BannerFamily } from "@/config/gacha";
+import type { CurrencyType, IncomeSource, TransactionType } from "./types";
 
-/** A real, already-recorded CalendarTransaction row, in the shape merge.ts needs. */
+/**
+ * A real, already-recorded CalendarTransaction row, in the shape merge.ts
+ * needs. Carries every field the client-facing MergedOccurrenceDto needs
+ * to let a user edit/delete a displayed one-time transaction (id, version)
+ * or show its full detail (source, bannerFamily, note) — all of these
+ * already exist on the underlying database row; this type must not strip
+ * any of them, or a displayed "actual" occurrence becomes un-editable.
+ */
 export type ActualOccurrence = {
+  id: string;
   /** Non-null only when this row materializes a series occurrence. */
   seriesId: string | null;
   /** The scheduled occurrence date this row materializes, if any. */
@@ -13,6 +22,10 @@ export type ActualOccurrence = {
   type: TransactionType;
   currencyType: CurrencyType | null;
   amount: number;
+  source: IncomeSource | null;
+  bannerFamily: BannerFamily | null;
+  note: string | null;
+  version: number;
 };
 
 // NOTE: the discriminant is named `kind`, not `source` — VirtualOccurrence

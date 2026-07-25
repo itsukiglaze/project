@@ -3,6 +3,7 @@ import { parseLocalDate } from "@/lib/calendar-math";
 import { upsertExceptionRequestSchema } from "@/lib/validation/calendar-exception";
 import { calendarErrorResponse } from "@/lib/api/calendar-errors";
 import { apiError } from "@/lib/api/errors";
+import { serializeExceptionRecord } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { upsertOccurrenceException } from "@/server/services/calendar-event-exception-service";
 
@@ -54,8 +55,13 @@ export async function PUT(
       expectedVersion,
       idempotencyKey,
     );
-    if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    if (!result.ok) {
+      if (result.kind === "STALE_STATE") {
+        return calendarErrorResponse({ ...result, current: serializeExceptionRecord(result.current) });
+      }
+      return calendarErrorResponse(result);
+    }
+    return NextResponse.json({ ...result, record: serializeExceptionRecord(result.record) });
   } catch (err) {
     console.error("PUT /api/calendar/series/[id]/exceptions/[date]: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");

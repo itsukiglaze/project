@@ -32,11 +32,66 @@ describe("GET /api/calendar/occurrences", () => {
   });
 
   it("returns occurrences for a valid range (200)", async () => {
-    mockGetMergedOccurrences.mockResolvedValue([{ kind: "virtual" }]);
+    mockGetMergedOccurrences.mockResolvedValue([
+      {
+        kind: "virtual",
+        seriesId: "series-1",
+        occurrenceDate: { year: 2026, month: 1, day: 10 },
+        type: "INCOME",
+        currencyType: "POLYCHROME",
+        amount: 60,
+        source: "DAILY",
+        bannerFamily: null,
+        note: null,
+      },
+    ]);
     const response = await GET(req("from=2026-01-01&to=2026-01-31"));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.occurrences).toHaveLength(1);
+  });
+
+  it("serializes a virtual occurrence's occurrenceDate as a YYYY-MM-DD string (true JSON round-trip)", async () => {
+    mockGetMergedOccurrences.mockResolvedValue([
+      {
+        kind: "virtual",
+        seriesId: "series-1",
+        occurrenceDate: { year: 2026, month: 1, day: 10 },
+        type: "INCOME",
+        currencyType: "POLYCHROME",
+        amount: 60,
+        source: "DAILY",
+        bannerFamily: null,
+        note: null,
+      },
+    ]);
+    const response = await GET(req("from=2026-01-01&to=2026-01-31"));
+    const body = await response.json();
+    expect(body.occurrences[0].occurrenceDate).toBe("2026-01-10");
+    expect(typeof body.occurrences[0].occurrenceDate).toBe("string");
+  });
+
+  it("serializes an actual occurrence's localDate as a YYYY-MM-DD string (true JSON round-trip)", async () => {
+    mockGetMergedOccurrences.mockResolvedValue([
+      {
+        kind: "actual",
+        id: "tx-1",
+        seriesId: null,
+        occurrenceDate: null,
+        localDate: { year: 2026, month: 1, day: 12 },
+        type: "INCOME",
+        currencyType: "POLYCHROME",
+        amount: 300,
+        source: "EVENT",
+        bannerFamily: null,
+        note: null,
+        version: 1,
+      },
+    ]);
+    const response = await GET(req("from=2026-01-01&to=2026-01-31"));
+    const body = await response.json();
+    expect(body.occurrences[0].localDate).toBe("2026-01-12");
+    expect(body.occurrences[0].id).toBe("tx-1");
   });
 
   it("400s when from > to", async () => {

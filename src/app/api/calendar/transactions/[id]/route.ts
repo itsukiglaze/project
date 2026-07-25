@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { deleteTransactionRequestSchema, updateTransactionRequestSchema } from "@/lib/validation/calendar-transaction";
 import { calendarErrorResponse } from "@/lib/api/calendar-errors";
 import { apiError } from "@/lib/api/errors";
+import { serializeTransactionRecord } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import {
   deleteOneTimeCalendarTransaction,
@@ -49,8 +50,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       expectedVersion,
       idempotencyKey,
     );
-    if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    if (!result.ok) {
+      if (result.kind === "STALE_STATE") {
+        return calendarErrorResponse({ ...result, current: serializeTransactionRecord(result.current) });
+      }
+      return calendarErrorResponse(result);
+    }
+    return NextResponse.json({ ...result, record: serializeTransactionRecord(result.record) });
   } catch (err) {
     console.error("PUT /api/calendar/transactions/[id]: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");
@@ -77,8 +83,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       parsed.data.expectedVersion,
       parsed.data.idempotencyKey,
     );
-    if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    if (!result.ok) {
+      if (result.kind === "STALE_STATE") {
+        return calendarErrorResponse({ ...result, current: serializeTransactionRecord(result.current) });
+      }
+      return calendarErrorResponse(result);
+    }
+    return NextResponse.json({ ...result, record: serializeTransactionRecord(result.record) });
   } catch (err) {
     console.error("DELETE /api/calendar/transactions/[id]: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");

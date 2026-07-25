@@ -15,6 +15,22 @@ import { PUT } from "./route";
 
 const USER = { id: "user-1" };
 
+/** A realistic ExceptionRecord — occurrenceDate is a real LocalDate object here. */
+function exceptionRecordFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    seriesId: "series-1",
+    occurrenceDate: { year: 2026, month: 1, day: 5 },
+    isCancelled: true,
+    amountOverride: null,
+    currencyTypeOverride: null,
+    sourceOverride: null,
+    bannerFamilyOverride: null,
+    noteOverride: null,
+    version: 1,
+    ...overrides,
+  };
+}
+
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     isCancelled: true,
@@ -56,11 +72,23 @@ describe("PUT /api/calendar/series/[id]/exceptions/[date]", () => {
   it("upserts successfully (200)", async () => {
     mockUpsertOccurrenceException.mockResolvedValue({
       ok: true,
-      record: { seriesId: "series-1" },
+      record: exceptionRecordFixture(),
       replay: false,
     });
     const response = await PUT(req(validBody()), ctx());
     expect(response.status).toBe(200);
+  });
+
+  it("serializes the record's occurrenceDate as a YYYY-MM-DD string (true JSON round-trip)", async () => {
+    mockUpsertOccurrenceException.mockResolvedValue({
+      ok: true,
+      record: exceptionRecordFixture({ occurrenceDate: { year: 2026, month: 7, day: 4 } }),
+      replay: false,
+    });
+    const response = await PUT(req(validBody()), ctx());
+    const body = await response.json();
+    expect(body.record.occurrenceDate).toBe("2026-07-04");
+    expect(typeof body.record.occurrenceDate).toBe("string");
   });
 
   it("400s on an invalid date in the URL path", async () => {
@@ -94,7 +122,7 @@ describe("PUT /api/calendar/series/[id]/exceptions/[date]", () => {
     mockUpsertOccurrenceException.mockResolvedValue({
       ok: false,
       kind: "STALE_STATE",
-      current: { seriesId: "series-1", version: 2 },
+      current: exceptionRecordFixture({ version: 2 }),
     });
     const response = await PUT(req(validBody()), ctx());
     expect(response.status).toBe(409);

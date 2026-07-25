@@ -59,12 +59,17 @@ function toTransactionRecord(row: TransactionRow): TransactionRecord {
 
 export function toActualOccurrence(record: TransactionRecord): ActualOccurrence {
   return {
+    id: record.id,
     seriesId: record.seriesId,
     occurrenceDate: record.occurrenceDate,
     localDate: record.localDate,
     type: record.type,
     currencyType: record.currencyType,
     amount: record.amount,
+    source: record.source,
+    bannerFamily: record.bannerFamily,
+    note: record.note,
+    version: record.version,
   };
 }
 

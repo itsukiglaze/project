@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSeriesRequestSchema } from "@/lib/validation/calendar-series";
 import { calendarErrorResponse } from "@/lib/api/calendar-errors";
 import { apiError } from "@/lib/api/errors";
+import { serializeSeriesRecord } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { createEventSeries } from "@/server/services/calendar-event-series-service";
 import { listActiveSeriesForUser } from "@/server/repositories/calendar-event-series-repository";
@@ -15,7 +16,7 @@ export async function GET() {
   if (!user) return apiError(401, "NOT_AUTHENTICATED", "Требуется вход через Telegram.");
 
   const series = await listActiveSeriesForUser(user.id);
-  return NextResponse.json({ series });
+  return NextResponse.json({ series: series.map(serializeSeriesRecord) });
 }
 
 export async function POST(request: NextRequest) {
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
   try {
     const result = await createEventSeries(user.id, input, timezone, idempotencyKey);
     if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, record: serializeSeriesRecord(result.record) });
   } catch (err) {
     console.error("POST /api/calendar/series: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");

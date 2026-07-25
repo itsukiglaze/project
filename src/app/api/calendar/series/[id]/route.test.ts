@@ -17,6 +17,35 @@ import { DELETE, PUT } from "./route";
 
 const USER = { id: "user-1" };
 
+/** A realistic SeriesRecord as returned by the service — rule dates are
+ * real LocalDate objects, exactly like the real service layer produces. */
+function seriesRecordFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "series-1",
+    type: "INCOME",
+    currencyType: "POLYCHROME",
+    amount: 60,
+    source: "DAILY",
+    bannerFamily: null,
+    note: null,
+    rule: {
+      frequency: "DAILY",
+      interval: 1,
+      daysOfWeek: [],
+      dayOfMonth: null,
+      startDate: { year: 2026, month: 1, day: 1 },
+      endType: "NEVER",
+      endDate: null,
+      occurrenceCount: null,
+    },
+    timezone: "Europe/Berlin",
+    isActive: true,
+    splitFromSeriesId: null,
+    version: 1,
+    ...overrides,
+  };
+}
+
 function validUpdateBody(overrides: Record<string, unknown> = {}) {
   return {
     type: "INCOME",
@@ -66,9 +95,37 @@ describe("PUT /api/calendar/series/[id]", () => {
   });
 
   it("updates on valid input (200)", async () => {
-    mockUpdateEventSeries.mockResolvedValue({ ok: true, record: { id: "series-1", version: 2 }, replay: false });
+    mockUpdateEventSeries.mockResolvedValue({
+      ok: true,
+      record: seriesRecordFixture({ version: 2 }),
+      replay: false,
+    });
     const response = await PUT(req("PUT", validUpdateBody()), ctx());
     expect(response.status).toBe(200);
+  });
+
+  it("serializes the updated record's rule dates as YYYY-MM-DD strings (true JSON round-trip)", async () => {
+    mockUpdateEventSeries.mockResolvedValue({
+      ok: true,
+      record: seriesRecordFixture({
+        version: 2,
+        rule: {
+          frequency: "WEEKLY",
+          interval: 1,
+          daysOfWeek: [1, 3],
+          dayOfMonth: null,
+          startDate: { year: 2026, month: 4, day: 1 },
+          endType: "NEVER",
+          endDate: null,
+          occurrenceCount: null,
+        },
+      }),
+      replay: false,
+    });
+    const response = await PUT(req("PUT", validUpdateBody()), ctx());
+    const body = await response.json();
+    expect(body.record.rule.startDate).toBe("2026-04-01");
+    expect(typeof body.record.rule.startDate).toBe("string");
   });
 
   it("400s on malformed JSON", async () => {
@@ -87,13 +144,14 @@ describe("PUT /api/calendar/series/[id]", () => {
     mockUpdateEventSeries.mockResolvedValue({
       ok: false,
       kind: "STALE_STATE",
-      current: { id: "series-1", version: 5 },
+      current: seriesRecordFixture({ version: 5 }),
     });
     const response = await PUT(req("PUT", validUpdateBody()), ctx());
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.error.code).toBe("STALE_STATE");
     expect(body.current.version).toBe(5);
+    expect(body.current.rule.startDate).toBe("2026-01-01"); // serialized, not {year,month,day}
   });
 
   it("maps NOT_FOUND to 404 (ownership isolation: foreign/nonexistent series look identical)", async () => {
@@ -132,7 +190,7 @@ describe("DELETE /api/calendar/series/[id]", () => {
   it("soft-deletes on valid input (200)", async () => {
     mockDeleteEventSeries.mockResolvedValue({
       ok: true,
-      record: { id: "series-1", isActive: false },
+      record: seriesRecordFixture({ isActive: false }),
       replay: false,
     });
     const response = await DELETE(
@@ -140,13 +198,15 @@ describe("DELETE /api/calendar/series/[id]", () => {
       ctx(),
     );
     expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.record.rule.startDate).toBe("2026-01-01");
   });
 
   it("maps STALE_STATE to 409", async () => {
     mockDeleteEventSeries.mockResolvedValue({
       ok: false,
       kind: "STALE_STATE",
-      current: { id: "series-1", version: 3 },
+      current: seriesRecordFixture({ version: 3 }),
     });
     const response = await DELETE(
       req("DELETE", { expectedVersion: 1, idempotencyKey: "a-valid-key-12345" }),

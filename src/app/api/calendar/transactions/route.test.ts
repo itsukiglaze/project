@@ -15,6 +15,24 @@ import { POST } from "./route";
 
 const USER = { id: "user-1" };
 
+/** A realistic TransactionRecord — localDate/occurrenceDate are real LocalDate objects here. */
+function transactionRecordFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "tx-1",
+    localDate: { year: 2026, month: 1, day: 5 },
+    type: "INCOME",
+    currencyType: "POLYCHROME",
+    amount: 300,
+    source: "EVENT",
+    bannerFamily: null,
+    note: null,
+    seriesId: null,
+    occurrenceDate: null,
+    version: 1,
+    ...overrides,
+  };
+}
+
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     localDate: "2026-01-05",
@@ -51,9 +69,26 @@ describe("POST /api/calendar/transactions", () => {
   });
 
   it("creates successfully (200)", async () => {
-    mockCreateOneTimeCalendarTransaction.mockResolvedValue({ ok: true, record: { id: "tx-1" }, replay: false });
+    mockCreateOneTimeCalendarTransaction.mockResolvedValue({
+      ok: true,
+      record: transactionRecordFixture(),
+      replay: false,
+    });
     const response = await POST(req(validBody()));
     expect(response.status).toBe(200);
+  });
+
+  it("serializes the created record's localDate as a YYYY-MM-DD string (true JSON round-trip)", async () => {
+    mockCreateOneTimeCalendarTransaction.mockResolvedValue({
+      ok: true,
+      record: transactionRecordFixture({ localDate: { year: 2026, month: 7, day: 4 } }),
+      replay: false,
+    });
+    const response = await POST(req(validBody()));
+    const body = await response.json();
+    expect(body.record.localDate).toBe("2026-07-04");
+    expect(typeof body.record.localDate).toBe("string");
+    expect(body.record.occurrenceDate).toBeNull();
   });
 
   it("400s on an invalid local date", async () => {
@@ -75,7 +110,16 @@ describe("POST /api/calendar/transactions", () => {
   });
 
   it("allows PULL type for one-time transactions", async () => {
-    mockCreateOneTimeCalendarTransaction.mockResolvedValue({ ok: true, record: { id: "tx-1" }, replay: false });
+    mockCreateOneTimeCalendarTransaction.mockResolvedValue({
+      ok: true,
+      record: transactionRecordFixture({
+        type: "PULL",
+        currencyType: "ENCRYPTED_MASTER_TAPE",
+        source: null,
+        bannerFamily: "EXCLUSIVE_AGENT",
+      }),
+      replay: false,
+    });
     const response = await POST(
       req(
         validBody({

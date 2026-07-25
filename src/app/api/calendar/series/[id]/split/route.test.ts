@@ -15,6 +15,33 @@ import { POST } from "./route";
 
 const USER = { id: "user-1" };
 
+function seriesRecordFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "series-1",
+    type: "INCOME",
+    currencyType: "POLYCHROME",
+    amount: 999,
+    source: "DAILY",
+    bannerFamily: null,
+    note: null,
+    rule: {
+      frequency: "DAILY",
+      interval: 1,
+      daysOfWeek: [],
+      dayOfMonth: null,
+      startDate: { year: 2026, month: 1, day: 10 },
+      endType: "NEVER",
+      endDate: null,
+      occurrenceCount: null,
+    },
+    timezone: "Europe/Berlin",
+    isActive: true,
+    splitFromSeriesId: null,
+    version: 1,
+    ...overrides,
+  };
+}
+
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     type: "INCOME",
@@ -68,13 +95,91 @@ describe("POST /api/calendar/series/[id]/split", () => {
     mockSplitEventSeries.mockResolvedValue({
       ok: true,
       mode: "SPLIT",
-      oldSeries: { id: "series-1" },
-      newSeries: { id: "series-2" },
+      oldSeries: seriesRecordFixture({
+        id: "series-1",
+        rule: {
+          frequency: "DAILY",
+          interval: 1,
+          daysOfWeek: [],
+          dayOfMonth: null,
+          startDate: { year: 2026, month: 1, day: 10 },
+          endType: "UNTIL_DATE",
+          endDate: { year: 2026, month: 1, day: 9 },
+          occurrenceCount: null,
+        },
+      }),
+      newSeries: seriesRecordFixture({
+        id: "series-2",
+        splitFromSeriesId: "series-1",
+        rule: {
+          frequency: "DAILY",
+          interval: 1,
+          daysOfWeek: [],
+          dayOfMonth: null,
+          startDate: { year: 2026, month: 1, day: 10 },
+          endType: "NEVER",
+          endDate: null,
+          occurrenceCount: null,
+        },
+      }),
       reassignedExceptionCount: 0,
       replay: false,
     });
     const response = await POST(req(validBody()), ctx());
     expect(response.status).toBe(200);
+  });
+
+  it("serializes both oldSeries and newSeries' rule dates as YYYY-MM-DD strings (true JSON round-trip)", async () => {
+    mockSplitEventSeries.mockResolvedValue({
+      ok: true,
+      mode: "SPLIT",
+      oldSeries: seriesRecordFixture({
+        id: "series-1",
+        rule: {
+          frequency: "DAILY",
+          interval: 1,
+          daysOfWeek: [],
+          dayOfMonth: null,
+          startDate: { year: 2026, month: 1, day: 10 },
+          endType: "UNTIL_DATE",
+          endDate: { year: 2026, month: 1, day: 9 },
+          occurrenceCount: null,
+        },
+      }),
+      newSeries: seriesRecordFixture({
+        id: "series-2",
+        splitFromSeriesId: "series-1",
+        rule: {
+          frequency: "DAILY",
+          interval: 1,
+          daysOfWeek: [],
+          dayOfMonth: null,
+          startDate: { year: 2026, month: 1, day: 10 },
+          endType: "NEVER",
+          endDate: null,
+          occurrenceCount: null,
+        },
+      }),
+      reassignedExceptionCount: 2,
+      replay: false,
+    });
+    const response = await POST(req(validBody()), ctx());
+    const body = await response.json();
+    expect(body.oldSeries.rule.endDate).toBe("2026-01-09");
+    expect(body.newSeries.rule.startDate).toBe("2026-01-10");
+    expect(typeof body.oldSeries.rule.startDate).toBe("string");
+  });
+
+  it("serializes an IN_PLACE_EDIT response's record dates too", async () => {
+    mockSplitEventSeries.mockResolvedValue({
+      ok: true,
+      mode: "IN_PLACE_EDIT",
+      record: seriesRecordFixture(),
+      replay: false,
+    });
+    const response = await POST(req(validBody()), ctx());
+    const body = await response.json();
+    expect(body.record.rule.startDate).toBe("2026-01-10");
   });
 
   it("400s on an invalid split date (bad calendar day)", async () => {
@@ -102,9 +207,11 @@ describe("POST /api/calendar/series/[id]/split", () => {
     mockSplitEventSeries.mockResolvedValue({
       ok: false,
       kind: "STALE_STATE",
-      current: { id: "series-1", version: 4 },
+      current: seriesRecordFixture({ version: 4 }),
     });
     const response = await POST(req(validBody()), ctx());
     expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.current.rule.startDate).toBe("2026-01-10");
   });
 });

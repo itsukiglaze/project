@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { splitSeriesRequestSchema } from "@/lib/validation/calendar-series";
 import { calendarErrorResponse } from "@/lib/api/calendar-errors";
 import { apiError } from "@/lib/api/errors";
+import { serializeSeriesRecord } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { splitEventSeries } from "@/server/services/calendar-event-series-service";
 
@@ -36,8 +37,21 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   try {
     const result = await splitEventSeries(user.id, seriesId, splitDate, newInput, expectedVersion, idempotencyKey);
-    if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    if (!result.ok) {
+      if (result.kind === "STALE_STATE") {
+        return calendarErrorResponse({ ...result, current: serializeSeriesRecord(result.current) });
+      }
+      return calendarErrorResponse(result);
+    }
+    const serialized =
+      result.mode === "IN_PLACE_EDIT"
+        ? { ...result, record: serializeSeriesRecord(result.record) }
+        : {
+            ...result,
+            oldSeries: serializeSeriesRecord(result.oldSeries),
+            newSeries: serializeSeriesRecord(result.newSeries),
+          };
+    return NextResponse.json(serialized);
   } catch (err) {
     console.error("POST /api/calendar/series/[id]/split: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");

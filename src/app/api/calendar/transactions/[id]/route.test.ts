@@ -17,6 +17,24 @@ import { DELETE, PUT } from "./route";
 
 const USER = { id: "user-1" };
 
+/** A realistic TransactionRecord — localDate/occurrenceDate are real LocalDate objects here. */
+function transactionRecordFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "tx-1",
+    localDate: { year: 2026, month: 1, day: 5 },
+    type: "INCOME",
+    currencyType: "POLYCHROME",
+    amount: 300,
+    source: "EVENT",
+    bannerFamily: null,
+    note: null,
+    seriesId: null,
+    occurrenceDate: null,
+    version: 1,
+    ...overrides,
+  };
+}
+
 function validUpdateBody(overrides: Record<string, unknown> = {}) {
   return {
     localDate: "2026-01-05",
@@ -60,21 +78,35 @@ describe("PUT /api/calendar/transactions/[id]", () => {
   it("updates successfully (200)", async () => {
     mockUpdateOneTimeCalendarTransaction.mockResolvedValue({
       ok: true,
-      record: { id: "tx-1", version: 2 },
+      record: transactionRecordFixture({ version: 2 }),
       replay: false,
     });
     const response = await PUT(req("PUT", validUpdateBody()), ctx());
     expect(response.status).toBe(200);
   });
 
+  it("serializes the updated record's localDate as a YYYY-MM-DD string (true JSON round-trip)", async () => {
+    mockUpdateOneTimeCalendarTransaction.mockResolvedValue({
+      ok: true,
+      record: transactionRecordFixture({ version: 2, localDate: { year: 2026, month: 7, day: 4 } }),
+      replay: false,
+    });
+    const response = await PUT(req("PUT", validUpdateBody()), ctx());
+    const body = await response.json();
+    expect(body.record.localDate).toBe("2026-07-04");
+    expect(typeof body.record.localDate).toBe("string");
+  });
+
   it("maps STALE_STATE to 409", async () => {
     mockUpdateOneTimeCalendarTransaction.mockResolvedValue({
       ok: false,
       kind: "STALE_STATE",
-      current: { id: "tx-1", version: 3 },
+      current: transactionRecordFixture({ version: 3 }),
     });
     const response = await PUT(req("PUT", validUpdateBody()), ctx());
     expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.current.localDate).toBe("2026-01-05");
   });
 
   it("maps NOT_FOUND to 404 (ownership isolation)", async () => {
@@ -112,7 +144,7 @@ describe("DELETE /api/calendar/transactions/[id]", () => {
   it("deletes successfully (200)", async () => {
     mockDeleteOneTimeCalendarTransaction.mockResolvedValue({
       ok: true,
-      record: { id: "tx-1" },
+      record: transactionRecordFixture(),
       replay: false,
     });
     const response = await DELETE(
@@ -120,6 +152,8 @@ describe("DELETE /api/calendar/transactions/[id]", () => {
       ctx(),
     );
     expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.record.localDate).toBe("2026-01-05");
   });
 
   it("400s on missing idempotencyKey", async () => {

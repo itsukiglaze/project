@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forecastQuerySchema } from "@/lib/validation/calendar-query";
 import { apiError } from "@/lib/api/errors";
+import { serializeForecastResult } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { getBoundedForecast } from "@/server/services/calendar-forecast-service";
 import { getResourceBalanceSnapshot } from "@/server/repositories/resource-balance-repository";
@@ -25,5 +26,5 @@ export async function GET(request: NextRequest) {
   const startingBalance = balance?.polychrome ?? 0;
 
   const forecast = await getBoundedForecast(user.id, today, parsed.data.days, startingBalance);
-  return NextResponse.json(forecast);
+  return NextResponse.json(serializeForecastResult(forecast));
 }

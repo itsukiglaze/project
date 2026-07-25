@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createTransactionRequestSchema } from "@/lib/validation/calendar-transaction";
 import { calendarErrorResponse } from "@/lib/api/calendar-errors";
 import { apiError } from "@/lib/api/errors";
+import { serializeTransactionRecord } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { createOneTimeCalendarTransaction } from "@/server/services/calendar-transaction-service";
 
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
   try {
     const result = await createOneTimeCalendarTransaction(user.id, input, idempotencyKey);
     if (!result.ok) return calendarErrorResponse(result);
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, record: serializeTransactionRecord(result.record) });
   } catch (err) {
     console.error("POST /api/calendar/transactions: unexpected error", err);
     return apiError(500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.");

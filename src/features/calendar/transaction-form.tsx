@@ -17,7 +17,7 @@ export type TransactionFormValues = {
   note: string;
 };
 
-export type EditableTransaction = Omit<TransactionRecordDto, "timezone">;
+export type EditableTransaction = TransactionRecordDto;
 
 function defaultValues(existing?: EditableTransaction): TransactionFormValues {
   if (!existing) {

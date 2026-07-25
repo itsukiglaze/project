@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { occurrencesQuerySchema } from "@/lib/validation/calendar-query";
 import { apiError } from "@/lib/api/errors";
+import { serializeMergedOccurrence } from "@/lib/api/calendar-dto";
 import { getCurrentUser } from "@/server/services/current-user";
 import { getMergedOccurrences } from "@/server/services/calendar-occurrence-service";
 
@@ -22,5 +23,5 @@ export async function GET(request: NextRequest) {
   }
 
   const occurrences = await getMergedOccurrences(user.id, parsed.data.from, parsed.data.to);
-  return NextResponse.json({ occurrences });
+  return NextResponse.json({ occurrences: occurrences.map(serializeMergedOccurrence) });
 }

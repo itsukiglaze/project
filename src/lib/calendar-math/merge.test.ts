@@ -24,12 +24,17 @@ function virtual(overrides: Partial<VirtualOccurrence> = {}): VirtualOccurrence 
 
 function actual(overrides: Partial<ActualOccurrence> = {}): ActualOccurrence {
   return {
+    id: "tx-1",
     seriesId: null,
     occurrenceDate: null,
     localDate: d(2026, 1, 1),
     type: TransactionType.INCOME,
     currencyType: CurrencyType.POLYCHROME,
     amount: 60,
+    source: IncomeSource.DAILY,
+    bannerFamily: null,
+    note: null,
+    version: 1,
     ...overrides,
   };
 }
@@ -39,6 +44,20 @@ describe("mergeActualAndVirtual", () => {
     const result = mergeActualAndVirtual([actual()], []);
     expect(result).toHaveLength(1);
     expect(result[0].kind).toBe("actual");
+  });
+
+  it("preserves id/source/bannerFamily/note/version on an actual occurrence — required for a client to edit/delete it", () => {
+    const result = mergeActualAndVirtual(
+      [actual({ id: "tx-42", source: IncomeSource.EVENT, note: "bonus", version: 3 })],
+      [],
+    );
+    expect(result[0]).toMatchObject({
+      kind: "actual",
+      id: "tx-42",
+      source: IncomeSource.EVENT,
+      note: "bonus",
+      version: 3,
+    });
   });
 
   it("includes a virtual occurrence when nothing materialized it yet", () => {

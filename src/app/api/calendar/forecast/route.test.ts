@@ -40,12 +40,32 @@ describe("GET /api/calendar/forecast", () => {
     mockGetBoundedForecast.mockResolvedValue({
       requestedHorizonDays: 30,
       effectiveHorizonDays: 30,
+      rangeStart: { year: 2026, month: 1, day: 1 },
+      rangeEnd: { year: 2026, month: 1, day: 31 },
       occurrences: [],
       dailyBalances: [],
       projectedEndingBalance: 100,
     });
     const response = await GET(req("days=30"));
     expect(response.status).toBe(200);
+  });
+
+  it("serializes rangeStart/rangeEnd and daily balance dates as YYYY-MM-DD strings (true JSON round-trip)", async () => {
+    mockGetBoundedForecast.mockResolvedValue({
+      requestedHorizonDays: 30,
+      effectiveHorizonDays: 30,
+      rangeStart: { year: 2026, month: 1, day: 1 },
+      rangeEnd: { year: 2026, month: 1, day: 31 },
+      occurrences: [],
+      dailyBalances: [{ date: { year: 2026, month: 1, day: 5 }, netChange: 60, runningBalance: 160 }],
+      projectedEndingBalance: 100,
+    });
+    const response = await GET(req("days=30"));
+    const body = await response.json();
+    expect(body.rangeStart).toBe("2026-01-01");
+    expect(body.rangeEnd).toBe("2026-01-31");
+    expect(body.dailyBalances[0].date).toBe("2026-01-05");
+    expect(typeof body.rangeStart).toBe("string");
   });
 
   it("400s on a negative days value", async () => {
@@ -63,6 +83,8 @@ describe("GET /api/calendar/forecast", () => {
     mockGetBoundedForecast.mockResolvedValue({
       requestedHorizonDays: 10_000,
       effectiveHorizonDays: 90,
+      rangeStart: { year: 2026, month: 1, day: 1 },
+      rangeEnd: { year: 2026, month: 3, day: 31 },
       occurrences: [],
       dailyBalances: [],
       projectedEndingBalance: 100,
@@ -83,6 +105,8 @@ describe("GET /api/calendar/forecast", () => {
     mockGetBoundedForecast.mockResolvedValue({
       requestedHorizonDays: 7,
       effectiveHorizonDays: 7,
+      rangeStart: { year: 2026, month: 1, day: 1 },
+      rangeEnd: { year: 2026, month: 1, day: 7 },
       occurrences: [],
       dailyBalances: [],
       projectedEndingBalance: 100,

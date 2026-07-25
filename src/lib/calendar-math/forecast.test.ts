@@ -114,12 +114,17 @@ describe("calculateBoundedForecast", () => {
 
   it("does not double-count a series occurrence that has already been materialized", () => {
     const actual: ActualOccurrence = {
+      id: "tx-1",
       seriesId: "series-1",
       occurrenceDate: d(2026, 1, 2),
       localDate: d(2026, 1, 2),
       type: TransactionType.INCOME,
       currencyType: CurrencyType.POLYCHROME,
       amount: 60,
+      source: IncomeSource.DAILY,
+      bannerFamily: null,
+      note: null,
+      version: 1,
     };
     const result = calculateBoundedForecast({
       today: d(2026, 1, 1),
@@ -136,12 +141,17 @@ describe("calculateBoundedForecast", () => {
 
   it("includes a one-time actual transaction from an unrelated series in the balance", () => {
     const oneTime: ActualOccurrence = {
+      id: "tx-2",
       seriesId: null,
       occurrenceDate: null,
       localDate: d(2026, 1, 1),
       type: TransactionType.EXPENSE,
       currencyType: CurrencyType.POLYCHROME,
       amount: 30,
+      source: null,
+      bannerFamily: null,
+      note: null,
+      version: 1,
     };
     const result = calculateBoundedForecast({
       today: d(2026, 1, 1),
