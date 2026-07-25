@@ -16,6 +16,10 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+# `npm ci` runs the `postinstall` script (`prisma generate`), which needs
+# the schema present — copy it in before installing, not after.
+COPY prisma ./prisma
+COPY prisma.config.ts ./
 RUN npm ci
 
 FROM node:22-alpine AS builder
@@ -32,7 +36,10 @@ ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
 ENV DIRECT_URL="postgresql://build:build@localhost:5432/build?schema=public"
 ENV NODE_ENV=production
 ENV BUILD_STANDALONE=true
-RUN npx prisma generate
+# `npm run build` already runs `prisma generate` first (see package.json) —
+# this is a fresh, explicit regeneration anyway since `src/` (COPY . . above)
+# is copied from the build context, not from the `deps` stage, and
+# generated output is gitignored/not part of that context.
 RUN npm run build
 
 FROM node:22-alpine AS runner
